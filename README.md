@@ -101,6 +101,16 @@ Elsewhere:
 - [addyosmani/agent-skills](https://github.com/addyosmani/agent-skills) — Production-grade engineering discipline for coding agents.
 - [multica-ai/andrej-karpathy-skills](https://github.com/multica-ai/andrej-karpathy-skills) — One CLAUDE.md distilled from Karpathy's notes on LLM coding pitfalls.
 
+### Career
+
+_Interview drilling, resumes, job search. The private versions stay in my store; these are the public extractions._
+
+Elsewhere:
+
+- [ong6/jobforge](https://github.com/ong6/jobforge) — My interview-prep plugin. Grades the plan you say out loud before you code, records real interviews as state, schedules what broke. Six skills and a SessionStart drill banner.
+- [ong6/groundplane](https://github.com/ong6/groundplane) — My deterministic-boundary library for agent output. Not a skill, but the reference for what an agent may generate versus what code must produce.
+- [kirilxd/swe-interview-coach](https://github.com/kirilxd/swe-interview-coach) — Behavioural and system-design prep for Claude Code. jobforge's harness and reference designs derive from it.
+
 ### Productivity
 
 _Capture, scheduling, personal routines. Nothing published yet._

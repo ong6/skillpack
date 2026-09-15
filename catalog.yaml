@@ -54,6 +54,17 @@ categories:
         note: Production-grade engineering discipline for coding agents.
       - repo: multica-ai/andrej-karpathy-skills
         note: One CLAUDE.md distilled from Karpathy's notes on LLM coding pitfalls.
+  - key: career
+    title: Career
+    blurb: Interview drilling, resumes, job search. The private versions stay in my store; these are the public extractions.
+    skills: []
+    links:
+      - repo: ong6/jobforge
+        note: My interview-prep plugin. Grades the plan you say out loud before you code, records real interviews as state, schedules what broke. Six skills and a SessionStart drill banner.
+      - repo: ong6/groundplane
+        note: My deterministic-boundary library for agent output. Not a skill, but the reference for what an agent may generate versus what code must produce.
+      - repo: kirilxd/swe-interview-coach
+        note: Behavioural and system-design prep for Claude Code. jobforge's harness and reference designs derive from it.
   - key: productivity
     title: Productivity
     blurb: Capture, scheduling, personal routines. Nothing published yet.
