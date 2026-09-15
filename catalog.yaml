@@ -1,0 +1,70 @@
+# Catalog data for README.md. `python3 scripts/build-catalog.py` regenerates the tables from this
+# file plus each skill's SKILL.md frontmatter. Categories are ordered as they appear.
+categories:
+  - key: writing
+    title: Writing
+    blurb: How replies and documents read.
+    skills: [unslop, wait-what]
+    links:
+      - repo: JuliusBrussee/caveman
+        note: Compressed "caveman" prose for agents; cuts output tokens by about two thirds while keeping code and commands exact.
+      - repo: ayghri/i-have-adhd
+        note: Stops the agent burying the answer. Same aim as unslop from a different angle.
+  - key: research
+    title: Research & scraping
+    blurb: Getting text out of the web and video.
+    skills: [web-extract, youtube-transcript]
+    links:
+      - repo: firecrawl/firecrawl-claude-plugin
+        note: Firecrawl's official plugin. web-extract wraps the same CLI.
+      - repo: tavily-ai/skills
+        note: Search, extract, crawl and deep research over the Tavily API.
+      - repo: exa-labs/exa-mcp-server
+        note: Neural web search and page fetch as an MCP server.
+  - key: design
+    title: Design
+    blurb: Diagrams, interfaces, visual judgment.
+    skills: [system-diagram]
+    links:
+      - repo: tt-a1i/archify
+        note: Turns a codebase or a description into interactive architecture and sequence diagrams as self-contained HTML.
+      - repo: nextlevelbuilder/ui-ux-pro-max-skill
+        note: UI and UX guidance for agents building interfaces. Large; its 119-rule usability list is the useful part.
+      - repo: Leonxlnx/taste-skill
+        note: Aesthetic judgment for generated frontends.
+  - key: documents
+    title: Documents
+    blurb: Producing files people print or send.
+    skills: [markdown-to-pdf]
+    links:
+      - repo: anthropics/skills
+        note: Anthropic's docx, pdf, pptx and xlsx skills live here (source-available, not open source).
+  - key: workflows
+    title: Workflows & agents
+    blurb: How sessions hand off, improve, and stay honest.
+    skills: [handoff, feedback-loop]
+    links:
+      - repo: mattpocock/skills
+        note: Matt Pocock's engineering set. grill-me, tdd, to-spec, implement, code-review, diagnosing-bugs.
+      - repo: obra/superpowers
+        note: Brainstorm, plan, TDD, review as one methodology.
+      - repo: dietrichgebert/ponytail
+        note: Pushes the agent to reuse the standard library and platform features before adding code or dependencies.
+      - repo: addyosmani/agent-skills
+        note: Production-grade engineering discipline for coding agents.
+      - repo: multica-ai/andrej-karpathy-skills
+        note: One CLAUDE.md distilled from Karpathy's notes on LLM coding pitfalls.
+  - key: productivity
+    title: Productivity
+    blurb: Capture, scheduling, personal routines. Nothing published yet.
+    skills: []
+    links: []
+  - key: collections
+    title: Collections & indexes
+    blurb: Where to look when none of the above fits.
+    skills: []
+    links:
+      - repo: anthropics/skills
+        note: The official reference set and the Agent Skills spec.
+      - repo: ComposioHQ/awesome-claude-skills
+        note: Curated index of Claude skills and tooling.

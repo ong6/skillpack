@@ -1,0 +1,11 @@
+{
+  "name": "ong6-skills",
+  "owner": { "name": "Jun Xiong Ong", "url": "https://github.com/ong6" },
+  "plugins": [
+    {
+      "name": "ong6-skills",
+      "source": "./",
+      "description": "Writing, research, design, document and workflow skills for Claude Code and Codex"
+    }
+  ]
+}

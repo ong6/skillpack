@@ -1,0 +1,137 @@
+/* markdown-to-pdf — print stylesheet for markdown notes rendered via pandoc + headless Chrome.
+   FONT RULE: Arial only. Never -apple-system / system-ui / Helvetica Neue / SF Pro —
+   macOS ships those as dfont suitcases that Chrome subsets into multiple same-named
+   CID fonts, and many viewers then drop glyphs. See SKILL.md. */
+
+@page {
+  size: A4;
+  margin: 16mm 18mm;
+}
+
+html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+
+body {
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 10pt;
+  line-height: 1.45;
+  color: #1a1a1a;
+  margin: 0;
+  max-width: none;
+  hyphens: none;
+}
+
+/* Measure control: cap prose at ~75 characters; tables and callouts stay full width. */
+p, li, blockquote > p { max-width: 150mm; }
+td, th, table p, table li { max-width: none; }
+
+/* ---------- headings ---------- */
+h1 {
+  font-size: 19pt;
+  line-height: 1.15;
+  margin: 0 0 5pt;
+  letter-spacing: -0.3pt;
+  border-bottom: 2.5pt solid #E8A33D;
+  padding-bottom: 6pt;
+}
+h2 {
+  font-size: 13pt;
+  margin: 16pt 0 6pt;
+  padding-bottom: 3pt;
+  border-bottom: 0.8pt solid #d4d4d4;
+  letter-spacing: -0.2pt;
+}
+h3 { font-size: 10.5pt; margin: 12pt 0 5pt; color: #7a4a00; }
+h4 { font-size: 10pt; margin: 10pt 0 4pt; }
+h1, h2, h3, h4 { break-after: avoid; break-inside: avoid; }
+h1 + p, h2 + p, h3 + p { margin-top: 0; }
+
+/* Start a section on a fresh page: add its pandoc id here.
+   (Pandoc strips leading numbers: "## 3. The question sheet" -> #the-question-sheet) */
+/* Example (solar brief): #time-critical--house-is-still-being-built { break-before: page; } */
+
+/* pandoc --standalone renders a title block; the document's own H1 is the title */
+h1.title, header#title-block-header { display: none; }
+
+/* ---------- text ---------- */
+p { margin: 0 0 6pt; orphans: 2; widows: 2; }
+strong { color: #000; }
+a { color: #0b5cad; text-decoration: none; }
+code {
+  font-family: "Andale Mono", "Courier New", monospace;
+  font-size: 8.5pt;
+  background: #f2f2f0;
+  padding: 0.5pt 3pt;
+  border-radius: 2.5pt;
+}
+pre {
+  background: #f7f7f5;
+  border-left: 2.5pt solid #E8A33D;
+  padding: 7pt 9pt;
+  font-size: 8.5pt;
+  line-height: 1.4;
+  border-radius: 0 3pt 3pt 0;
+  break-inside: avoid;
+  margin: 7pt 0;
+  white-space: pre-wrap;
+}
+pre code { background: none; padding: 0; font-size: inherit; }
+
+/* ---------- lists ---------- */
+ul, ol { margin: 0 0 7pt; padding-left: 15pt; }
+li { margin-bottom: 3.5pt; break-inside: avoid; }
+li > ul, li > ol { margin-top: 3.5pt; }
+ol { padding-left: 17pt; }
+ol > li::marker { font-weight: 700; color: #7a4a00; }
+
+/* Task lists: pandoc's own stylesheet pushes the <input> off-page with a negative
+   margin, so it never prints. Hide it and draw the box ourselves. */
+ul.task-list, ul.task-list[class] { list-style: none; padding-left: 2pt; }
+ul.task-list > li { position: relative; padding-left: 16pt; margin-bottom: 5pt; }
+ul.task-list > li::before {
+  content: "";
+  position: absolute; left: 0; top: 2.2pt;
+  width: 9.5pt; height: 9.5pt;
+  border: 0.9pt solid #444;
+  border-radius: 1.5pt;
+  background: #fff;
+}
+ul.task-list > li:has(input:checked)::before { background: #555; border-color: #555; }
+ul.task-list li input[type="checkbox"] { display: none !important; }
+
+/* ---------- tables ---------- */
+table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 8pt 0 10pt;
+  font-size: 8.9pt;
+}
+thead { display: table-header-group; }
+tr { break-inside: avoid; }
+th {
+  background: #f0ede7;
+  text-align: left;
+  font-weight: 700;
+  padding: 4.5pt 6pt;
+  border: 0.5pt solid #cfcac0;
+  font-size: 8.7pt;
+}
+td {
+  padding: 4.5pt 6pt;
+  border: 0.5pt solid #dedad2;
+  vertical-align: top;
+}
+tbody tr:nth-child(even) { background: #faf9f7; }
+
+/* ---------- callouts ---------- */
+blockquote {
+  margin: 9pt 0;
+  padding: 7pt 10pt;
+  background: #fdf7ea;
+  border-left: 3pt solid #E8A33D;
+  border-radius: 0 3pt 3pt 0;
+  break-inside: avoid;
+}
+blockquote > p:last-child { margin-bottom: 0; }
+blockquote ol, blockquote ul { margin-bottom: 0; }
+
+hr { border: none; border-top: 0.6pt solid #ddd; margin: 12pt 0; }
