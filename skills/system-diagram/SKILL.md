@@ -70,9 +70,12 @@ Numbers are for a `viewBox` roughly 960 wide. Scale proportionally.
 `Figure` (mono `FIGURE 01 · EYEBROW`, title, one-line caption, legend, Pause and Replay), `Lane`,
 `Group`, `Node` (icon, label, mono sub), `Chip`, `Connector` (orthogonal, arrowheads) and `Packet`
 (a legend-shaped token animated along a connector, static at its midpoint under reduced motion).
-The visual reference is the figure style in OpenAI's Habitat storage post. Put packets on the
-flows the claim is about, one kind per direction (request, response, change), never on every
-line. Test motion in a real browser: position changes while playing, holds after Pause, static
+The visual reference is the figure style in OpenAI's Habitat storage post. Start from a preset (`uipack/presets`: serviceMap, agentLoop, ragPipeline, skillLifecycle,
+syncLoop, beforeAfter, pipeline) and feed it real data before drawing by hand. Connector rule:
+one connector, one arrowhead, in the request direction; the response is a reversed packet on the
+same path; fan-in uses `Bus`; never `arrow="both"`. Put packets on the flows the claim is about,
+one kind per direction (request, response, change), never on every line. Give the nodes,
+connectors and packets of the claim's path the same `flow` id so hover traces it. Test motion in a real browser: position changes while playing, holds after Pause, static
 under `prefers-reduced-motion`.
 
 **A site with its own diagram components and no uipack.** Follow the conventions the invoking skill or the
