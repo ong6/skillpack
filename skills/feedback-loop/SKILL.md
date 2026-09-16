@@ -67,7 +67,7 @@ Add the repo's usual frontmatter above the heading if its notes require one.
 
 ## Keeping this skill in sync across repos and machines
 
-This skill ships in the [`ong6/skills`](https://github.com/ong6/skills) collection, which host repos
+This skill ships in the [`ong6/skillpack`](https://github.com/ong6/skillpack) collection, which host repos
 install as a `git subtree`. The collection's `scripts/sync.sh` moves changes both ways and is wired
 into the host repo's hooks:
 

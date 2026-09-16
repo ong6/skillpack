@@ -1,9 +1,9 @@
 {
-  "name": "ong6-skills",
+  "name": "skillpack",
   "owner": { "name": "Jun Xiong Ong", "url": "https://github.com/ong6" },
   "plugins": [
     {
-      "name": "ong6-skills",
+      "name": "skillpack",
       "source": "./",
       "description": "Writing, research, design, document and workflow skills for Claude Code and Codex"
     }

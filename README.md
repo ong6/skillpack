@@ -1,22 +1,28 @@
-# skills
+# skillpack
 
 Agent skills I use across my repos, for Claude Code and Codex, plus links to other people's skills I
 rate. One folder per skill under `skills/`, each with a `SKILL.md` that says when it fires and what
 it does. Categories below are the map; a skill lives in exactly one.
+
+This is the pack half of a small family of agent tools: forges make things, packs bundle them.
+[groundplane](https://github.com/ong6/groundplane), [jobforge](https://github.com/ong6/jobforge),
+[skillforge](https://github.com/ong6/skillforge), [deckforge](https://github.com/ong6/deckforge),
+[proofpack](https://github.com/ong6/proofpack) and [fieldpack](https://github.com/ong6/fieldpack)
+all run these skills.
 
 ## Install
 
 **As a plugin** (Claude Code):
 
 ```
-/plugin marketplace add ong6/skills
-/plugin install ong6-skills@ong6-skills
+/plugin marketplace add ong6/skillpack
+/plugin install skillpack@skillpack
 ```
 
 **As a subtree** (any repo, both agents, edits flow back):
 
 ```sh
-git subtree add --squash --prefix=.claude/shared-skills git@github.com:ong6/skills.git main
+git subtree add --squash --prefix=.claude/shared-skills https://github.com/ong6/skillpack.git main
 ```
 
 Then link the folders you want into `.claude/skills/` (and `.agents/skills/` for Codex), and
@@ -109,6 +115,8 @@ Elsewhere:
 
 - [ong6/jobforge](https://github.com/ong6/jobforge) — My interview-prep plugin. Grades the plan you say out loud before you code, records real interviews as state, schedules what broke. Six skills and a SessionStart drill banner.
 - [ong6/groundplane](https://github.com/ong6/groundplane) — My deterministic-boundary library for agent output. Not a skill, but the reference for what an agent may generate versus what code must produce.
+- [ong6/skillforge](https://github.com/ong6/skillforge) — My skill workbench. Discovers, versions and evaluates skills against a baseline; the place a skill from here gets measured before it stays.
+- [ong6/fieldpack](https://github.com/ong6/fieldpack) — My local-first field suite. deckforge (presentations), skillforge (skill evaluation) and proofpack (pilot evidence) as one install.
 - [kirilxd/swe-interview-coach](https://github.com/kirilxd/swe-interview-coach) — Behavioural and system-design prep for Claude Code. jobforge's harness and reference designs derive from it.
 
 ### Productivity

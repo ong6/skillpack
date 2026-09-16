@@ -11,7 +11,7 @@
 #   sync.sh --status  Human-readable state. No changes.
 #
 # Configuration (env, all optional):
-#   SKILLS_SYNC_URL     upstream URL    (default git@github.com:ong6/skills.git)
+#   SKILLS_SYNC_URL     upstream URL    (default https://github.com/ong6/skillpack.git)
 #   SKILLS_SYNC_REMOTE  remote name     (default skills)
 #   SKILLS_SYNC_BRANCH  upstream branch (default main)
 #
@@ -21,7 +21,7 @@
 set -u
 export GIT_TERMINAL_PROMPT=0
 
-URL="${SKILLS_SYNC_URL:-git@github.com:ong6/skills.git}"
+URL="${SKILLS_SYNC_URL:-https://github.com/ong6/skillpack.git}"
 REMOTE="${SKILLS_SYNC_REMOTE:-skills}"
 BRANCH="${SKILLS_SYNC_BRANCH:-main}"
 
