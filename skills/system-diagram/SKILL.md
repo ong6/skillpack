@@ -66,7 +66,16 @@ Numbers are for a `viewBox` roughly 960 wide. Scale proportionally.
 
 ## Output targets
 
-**A site with its own diagram components.** Follow the conventions the invoking skill or the
+**A React site.** Use [`ong6/uipack`](https://github.com/ong6/uipack) (`npm install github:ong6/uipack`):
+`Figure` (mono `FIGURE 01 · EYEBROW`, title, one-line caption, legend, Pause and Replay), `Lane`,
+`Group`, `Node` (icon, label, mono sub), `Chip`, `Connector` (orthogonal, arrowheads) and `Packet`
+(a legend-shaped token animated along a connector, static at its midpoint under reduced motion).
+The visual reference is the figure style in OpenAI's Habitat storage post. Put packets on the
+flows the claim is about, one kind per direction (request, response, change), never on every
+line. Test motion in a real browser: position changes while playing, holds after Pause, static
+under `prefers-reduced-motion`.
+
+**A site with its own diagram components and no uipack.** Follow the conventions the invoking skill or the
 repo supplies: component location, shared primitives, colour tokens, and how the narrow variant is
 switched in. Never put `<style>`, `<script>`, or external refs inside the SVG. If labels drop under
 ~10px at 390 wide, provide a stacked variant rather than shrinking.
