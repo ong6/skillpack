@@ -2,13 +2,13 @@
 
 Agent skills I use across my repos, for Claude Code and Codex, plus links to other people's skills I
 rate. One folder per skill under `skills/`, each with a `SKILL.md` that says when it fires and what
-it does. Categories below are the map; a skill lives in exactly one.
+it does. The categories below are the map. A skill lives in exactly one.
 
 This is the pack half of a small family of agent tools: forges make things, packs bundle them.
 [groundplane](https://github.com/ong6/groundplane), [jobforge](https://github.com/ong6/jobforge),
 [skillforge](https://github.com/ong6/skillforge), [deckforge](https://github.com/ong6/deckforge),
-[proofpack](https://github.com/ong6/proofpack) and [fieldpack](https://github.com/ong6/fieldpack)
-all run these skills.
+[proofpack](https://github.com/ong6/proofpack), [fieldpack](https://github.com/ong6/fieldpack) and
+[uipack](https://github.com/ong6/uipack) all run these skills.
 
 ## Install
 
@@ -27,7 +27,7 @@ git subtree add --squash --prefix=.claude/shared-skills https://github.com/ong6/
 
 Then link the folders you want into `.claude/skills/` (and `.agents/skills/` for Codex), and
 register `scripts/sync.sh --start` at SessionStart and `scripts/sync.sh --stop` at Stop. The
-script keeps every consumer equal to this repo in both directions; see [Sync](#sync).
+script keeps every consumer equal to this repo in both directions. See [Sync](#sync).
 
 **Copy a single skill:** take its folder. Nothing depends on the rest of the tree except where a
 skill links to another (`handoff` runs `unslop` over its output).
@@ -145,8 +145,8 @@ consumer repo.
 | `--status` | by hand | print prefix, remote, local tree, last synced point |
 
 State lives in `.git/skills-sync`, per clone. A conflict aborts the merge, leaves the tree clean and
-exits 2 with the command to resolve it. A missing network or an empty upstream never fails a hook;
-the first `--stop` against an empty upstream creates it from the folder. Overrides:
+exits 2 with the command to resolve it. A missing network or an empty upstream never fails a hook.
+The first `--stop` against an empty upstream creates it from the folder. Overrides:
 `SKILLS_SYNC_URL`, `SKILLS_SYNC_REMOTE` (default `skills`), `SKILLS_SYNC_BRANCH` (default `main`).
 
 `bash scripts/test-sync.sh` runs fifteen scenarios against a temporary bare upstream.
