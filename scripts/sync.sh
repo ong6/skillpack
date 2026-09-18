@@ -15,9 +15,9 @@
 #   SKILLS_SYNC_REMOTE  remote name     (default skills)
 #   SKILLS_SYNC_BRANCH  upstream branch (default main)
 #
-# Never blocks on a missing network or an absent upstream: every failure is a
-# message on stderr and exit 0, except a merge conflict, which exits 2 so the
-# calling hook can wake the agent to resolve it.
+# The first start fetches synchronously; later starts use the cached ref. A
+# missing network, unrelated work or an in-progress Git operation defers sync
+# with exit 0. A merge conflict exits 2 so the hook can wake the agent.
 set -u
 export GIT_TERMINAL_PROMPT=0
 
@@ -45,10 +45,36 @@ remote_sha() { git rev-parse -q --verify "$REF" 2>/dev/null || echo none; }
 state_get() { [ -f "$STATE" ] && sed -n "s/^$1=//p" "$STATE" || true; }
 state_set() { printf 'tree=%s\nremote=%s\n' "$1" "$2" > "$STATE"; }
 
-# Commit only this folder so a merge never runs over uncommitted skill edits.
+# Do not commit into, abort or reset an operation the owner already started.
+operation_idle() {
+  local marker
+  for marker in MERGE_HEAD CHERRY_PICK_HEAD REVERT_HEAD rebase-merge rebase-apply sequencer; do
+    if [ -e "$(git rev-parse --git-path "$marker")" ]; then
+      say "Git operation in progress; sync deferred."
+      return 1
+    fi
+  done
+  if [ -n "$(git ls-files --unmerged)" ]; then
+    say "unmerged index entries; sync deferred."
+    return 1
+  fi
+}
+
+# Stage this folder, then explicitly exclude anything already staged elsewhere.
 commit_prefix() {
   [ -n "$(git status --porcelain -- "$PREFIX")" ] || return 0
-  git add -A -- "$PREFIX" && git commit -q -m "skills-sync: commit skill edits before sync" || return 1
+  git add -A -- "$PREFIX" || return 1
+  git diff --cached --quiet -- "$PREFIX" && return 0
+  git commit --only -q -m "skills-sync: commit skill edits before sync" -- "$PREFIX" || return 1
+}
+
+# Called after commit_prefix: remaining work belongs to the consumer. Subtree
+# merge/rejoin needs a clean checkout; leave the index and worktree as they are.
+checkout_clean() {
+  if [ -n "$(git status --porcelain --untracked-files=all)" ]; then
+    say "unrelated work present; sync deferred."
+    return 1
+  fi
 }
 
 fetch_bg() {
@@ -73,6 +99,8 @@ merge_remote() {
   local r; r="$(remote_sha)"
   [ "$r" != none ] || return 0
   [ "$r" != "$(state_get remote)" ] || return 0
+  commit_prefix || { say "could not commit local skill edits; merge skipped."; return 0; }
+  checkout_clean || return 0
   if [ "$(state_get remote)" = "" ] && [ "$(git rev-parse -q --verify "$r^{tree}")" = "$(local_tree)" ]; then
     state_set "$(local_tree)" "$r"; return 0     # first run, already identical
   fi
@@ -80,7 +108,6 @@ merge_remote() {
     say "no subtree baseline for $PREFIX; run: git subtree add --squash --prefix=$PREFIX $REMOTE $BRANCH"
     return 0
   fi
-  commit_prefix || { say "could not commit local skill edits; merge skipped."; return 0; }
   if git subtree merge -q --squash --prefix="$PREFIX" "$r" -m "skills-sync: merge upstream $PREFIX" >/dev/null 2>&1; then
     state_set "$(local_tree)" "$r"
     say "merged upstream changes into $PREFIX"
@@ -94,6 +121,7 @@ merge_remote() {
 
 push_local() {
   commit_prefix || { say "could not commit skill edits; push skipped."; return 0; }
+  checkout_clean || return 0
   [ "$(local_tree)" != "$(state_get tree)" ] || return 0        # nothing new here
   [ "$(local_tree)" != none ] || return 0
   ensure_remote
@@ -116,6 +144,7 @@ push_local() {
   fi
   merge_remote; local rc=$?
   [ "$rc" -eq 0 ] || return "$rc"
+  checkout_clean || return 0
   [ "$(local_tree)" != "$(git rev-parse -q --verify "$(remote_sha)^{tree}")" ] || { state_set "$(local_tree)" "$(remote_sha)"; return 0; }
   push_and_record && say "pushed $PREFIX to upstream"
 }
@@ -133,6 +162,10 @@ push_and_record() {
   say "push to upstream failed; will retry next session."
   return 1
 }
+
+case "${1:-}" in
+  --start|--stop|--merge|--push) operation_idle || exit 0 ;;
+esac
 
 case "${1:-}" in
   --start)

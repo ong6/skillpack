@@ -146,10 +146,16 @@ consumer repo.
 
 State lives in `.git/skills-sync`, per clone. A conflict aborts the merge, leaves the tree clean and
 exits 2 with the command to resolve it. A missing network or an empty upstream never fails a hook.
+The first `--start` on a new clone fetches synchronously; subsequent starts use the cached ref.
+Commits include only the skills folder, even if other files are staged. Unrelated staged, unstaged
+or untracked work defers merging and pushing, leaving the recorded sync point unchanged. An
+existing merge, rebase, cherry-pick, revert or unmerged index defers the whole sync before a commit.
+The next run retries after that work is resolved.
 The first `--stop` against an empty upstream creates it from the folder. Overrides:
 `SKILLS_SYNC_URL`, `SKILLS_SYNC_REMOTE` (default `skills`), `SKILLS_SYNC_BRANCH` (default `main`).
 
-`bash scripts/test-sync.sh` runs fifteen scenarios against a temporary bare upstream.
+`bash scripts/test-sync.sh` exercises temporary consumers and bare remotes without network access,
+including bootstrap, conflicts, unrelated staged work and existing Git operations.
 
 ## Maintaining
 
