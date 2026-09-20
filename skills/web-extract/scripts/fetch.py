@@ -25,6 +25,7 @@ from protego import Protego
 
 UA_AUTONOMOUS = "ModelContextProtocol/1.0 (Autonomous; +https://github.com/modelcontextprotocol/servers)"
 UA_MANUAL = "ModelContextProtocol/1.0 (User-Specified; +https://github.com/modelcontextprotocol/servers)"
+BLOCKED_HOSTS = {"linkedin.com", "reddit.com"}
 
 
 def html_to_markdown(html: str) -> str:
@@ -37,6 +38,11 @@ def html_to_markdown(html: str) -> str:
 def robots_url(url: str) -> str:
     p = urlparse(url)
     return urlunparse((p.scheme, p.netloc, "/robots.txt", "", "", ""))
+
+
+def blocked_host(url: str) -> bool:
+    host = (urlparse(url).hostname or "").lower().rstrip(".")
+    return any(host == blocked or host.endswith(f".{blocked}") for blocked in BLOCKED_HOSTS)
 
 
 def robots_allows(client: httpx.Client, url: str, ua: str) -> tuple[bool, str]:
@@ -65,6 +71,9 @@ def main() -> int:
     ap.add_argument("--manual", action="store_true", help="use the user-specified user agent")
     ap.add_argument("--proxy", default=None)
     a = ap.parse_args()
+    if blocked_host(a.url):
+        print("VERDICT: blocked\nHINT: LinkedIn and Reddit are off-limits even for manual requests or --ignore-robots.", file=sys.stderr)
+        return 1
     ua = UA_MANUAL if (a.manual or a.ignore_robots) else UA_AUTONOMOUS
 
     with httpx.Client(proxy=a.proxy, timeout=30) as client:
