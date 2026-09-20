@@ -24,7 +24,7 @@ categories:
   - key: design
     title: Design
     blurb: Diagrams, interfaces, visual judgment.
-    skills: [system-diagram, 3d-design]
+    skills: [system-diagram, 3d-design, blender-authoring]
     links:
       - repo: tt-a1i/archify
         note: Turns a codebase or a description into interactive architecture and sequence diagrams as self-contained HTML.
