@@ -3,7 +3,7 @@ name: 3d-design
 description: >-
   Choose and use a 3D design workflow for UI illustrations, modeled objects, character animation,
   interactive scenes and web delivery. Use for "3D design", "3D animation", "model this",
-  "Blender or Three.js", "make the movement natural", or selecting and switching 3D tools.
+  "Blender or Three.js", "make the movement natural", "seamless loop", "continuous pan", or selecting and switching 3D tools.
   Covers authoring, runtime, export and visual verification; not ordinary page layout,
   2D architecture diagrams or unrelated Blender installation troubleshooting.
 ---
@@ -49,6 +49,11 @@ Read [options.md](options.md) for tradeoffs and official documentation. Start he
 State the chosen authoring tool, delivery method, reason and one switching condition in a short
 paragraph. Compare only credible alternatives for this task. Do not ask the user to select a
 framework when their requirements already decide it. Do not migrate an engine merely to add a model.
+
+When Blender is selected, read [blender-authoring](../blender-authoring/SKILL.md). For any
+loop, coordinated character action or continuous pan, read [animation.md](animation.md) before
+implementation. It defines contact, timeline, loop-boundary and player checks. Keep tool selection
+here; use the companion for Blender execution details.
 
 ## 3. Prove the hardest visual beat first
 

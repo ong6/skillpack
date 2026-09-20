@@ -49,7 +49,17 @@ F-curves after inserting:
 
 ```python
 action = obj.animation_data.action
-for fc in action.fcurves:
+# Blender 4.4+ layered actions (including Blender 5); legacy fallback.
+def action_curves(action):
+    if hasattr(action, "layers") and action.layers:
+        for layer in action.layers:
+            for strip in layer.strips:
+                for bag in strip.channelbags:
+                    yield from bag.fcurves
+    elif hasattr(action, "fcurves"):
+        yield from action.fcurves
+
+for fc in action_curves(action):
     for kp in fc.keyframe_points:
         kp.interpolation = "BEZIER"     # CONSTANT (steps), LINEAR, BEZIER
         kp.easing = "AUTO"              # EASE_IN, EASE_OUT, EASE_IN_OUT

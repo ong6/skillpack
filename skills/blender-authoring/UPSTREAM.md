@@ -7,3 +7,5 @@ License: MIT; see LICENSE.
 Local changes: renamed skill to blender-authoring, narrowed its trigger to Blender-selected work,
 and connected it to the shared 3d-design decision and animation review. No upstream scripts
 were executed during installation.
+
+Patched the animation reference to iterate layered action channel bags on Blender 4.4+/5, with a legacy F-curve fallback. The tennis generator uses the layered form; the complete upstream reference collection has not been runtime-tested.
