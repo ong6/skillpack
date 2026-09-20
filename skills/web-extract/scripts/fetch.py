@@ -67,7 +67,7 @@ def main() -> int:
     ap.add_argument("--raw", action="store_true", help="skip readability + markdown, print raw body")
     ap.add_argument("--max-length", type=int, default=5000)
     ap.add_argument("--start-index", type=int, default=0)
-    ap.add_argument("--ignore-robots", action="store_true", help="user asked for this page by hand")
+    ap.add_argument("--ignore-robots", action="store_true", help="user asked for this exact page; never overrides blocked hosts")
     ap.add_argument("--manual", action="store_true", help="use the user-specified user agent")
     ap.add_argument("--proxy", default=None)
     a = ap.parse_args()

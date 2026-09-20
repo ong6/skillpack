@@ -20,7 +20,7 @@ Two surfaces, same account:
   config, never in the repo). Prefer it from Bash.
 - **MCP** server `firecrawl`, when the host project has one configured. Keep it local-scope so
   the key never travels with the repo.
-- **Bundled fallback** `scripts/fetch.py`, for a normal public URL when Firecrawl is unavailable or
+- **Bundled fallback** [`scripts/fetch.py`](scripts/fetch.py), for a normal public URL when Firecrawl is unavailable or
   out of credits. It honors `robots.txt`, extracts readable Markdown and paginates long output. It
   does not render JavaScript, parse local files or replace Firecrawl for walled pages.
 
@@ -31,10 +31,11 @@ first on plain pages and reach for Firecrawl when they come back thin, walled or
 
 ## Commands
 
-Before any CLI extraction, make a scratch directory outside the repository and resolve it to an
-absolute path. If the host does not provide `$SCRATCHPAD`, create one with `mktemp -d`; never guess a
-repo-local `.firecrawl/` path. Keep the path for the whole batch. Every scrape, search, parse,
-interact and fallback call must use `-o` or shell redirection into that directory.
+Before any CLI extraction, check `$SCRATCHPAD`. When it is non-empty, use that exact directory.
+When it is empty, create one outside the repository with `mktemp -d`. Resolve the chosen directory
+to an absolute path, create it, and keep it for the whole batch. Never replace a provided scratchpad
+or guess a repo-local `.firecrawl/` path. Every scrape, search, parse, interact and fallback call
+must use `-o` or shell redirection into that directory.
 
 ```bash
 firecrawl scrape "<url>" --only-main-content -o "$SCRATCHPAD/<name>.md"   # clean markdown
