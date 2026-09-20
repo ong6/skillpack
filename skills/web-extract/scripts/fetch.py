@@ -18,17 +18,15 @@ import argparse
 import sys
 from urllib.parse import urlparse, urlunparse
 
-import httpx
-import markdownify
-import readabilipy.simple_json
-from protego import Protego
-
 UA_AUTONOMOUS = "ModelContextProtocol/1.0 (Autonomous; +https://github.com/modelcontextprotocol/servers)"
 UA_MANUAL = "ModelContextProtocol/1.0 (User-Specified; +https://github.com/modelcontextprotocol/servers)"
 BLOCKED_HOSTS = {"linkedin.com", "reddit.com"}
 
 
 def html_to_markdown(html: str) -> str:
+    import markdownify
+    import readabilipy.simple_json
+
     ret = readabilipy.simple_json.simple_json_from_html_string(html, use_readability=True)
     if not ret["content"]:
         return "<error>Page failed to be simplified from HTML</error>"
@@ -45,7 +43,10 @@ def blocked_host(url: str) -> bool:
     return any(host == blocked or host.endswith(f".{blocked}") for blocked in BLOCKED_HOSTS)
 
 
-def robots_allows(client: httpx.Client, url: str, ua: str) -> tuple[bool, str]:
+def robots_allows(client, url: str, ua: str) -> tuple[bool, str]:
+    import httpx
+    from protego import Protego
+
     r_url = robots_url(url)
     try:
         r = client.get(r_url, follow_redirects=True, headers={"User-Agent": ua})
@@ -74,6 +75,9 @@ def main() -> int:
     if blocked_host(a.url):
         print("VERDICT: blocked\nHINT: LinkedIn and Reddit are off-limits even for manual requests or --ignore-robots.", file=sys.stderr)
         return 1
+
+    import httpx
+
     ua = UA_MANUAL if (a.manual or a.ignore_robots) else UA_AUTONOMOUS
 
     with httpx.Client(proxy=a.proxy, timeout=30) as client:

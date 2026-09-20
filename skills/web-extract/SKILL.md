@@ -39,14 +39,14 @@ must use `-o` or shell redirection into that directory.
 
 ```bash
 firecrawl scrape "<url>" --only-main-content -o "$SCRATCHPAD/<name>.md"   # clean markdown
-firecrawl scrape "<url>" -Q "<question>"                                   # answer from the page
-firecrawl scrape "<url>" -f markdown,links --wait-for 5000                # JS-heavy page
+firecrawl scrape "<url>" -Q "<question>" -o "$SCRATCHPAD/<name>.md"     # answer from the page
+firecrawl scrape "<url>" -f markdown,links --wait-for 5000 -o "$SCRATCHPAD/<name>.json" # JS-heavy
 firecrawl scrape "<url1>" "<url2>" -o "$SCRATCHPAD/"                       # batch, concurrent
-firecrawl search "<query>" --limit 5                                       # web search
+firecrawl search "<query>" --limit 5 -o "$SCRATCHPAD/search.json"           # web search
 firecrawl parse ./file.pdf -o "$SCRATCHPAD/file.md"                        # local document
-firecrawl interact "<what to do on the page>"                              # clicks, forms
+firecrawl interact "<what to do on the page>" -o "$SCRATCHPAD/interact.md" # clicks, forms
 firecrawl doctor <job-id>                                                  # a job failed
-uv run "<skill-dir>/scripts/fetch.py" "<url>" > "$SCRATCHPAD/<name>.md" # fallback
+"<skill-dir>/scripts/fetch.py" "<url>" > "$SCRATCHPAD/<name>.md"        # fallback
 ```
 
 Public PDFs go through `scrape`, local ones through `parse`. Use `interact` only when the
