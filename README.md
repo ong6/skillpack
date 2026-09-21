@@ -29,8 +29,7 @@ Then link the folders you want into `.claude/skills/` (and `.agents/skills/` for
 register `scripts/sync.sh --start` at SessionStart and `scripts/sync.sh --stop` at Stop. The
 script keeps every consumer equal to this repo in both directions. See [Sync](#sync).
 
-**Copy a single skill:** take its folder. Nothing depends on the rest of the tree except where a
-skill links to another (`handoff` runs `unslop` over its output).
+**Copy a single skill:** take its folder. Nothing depends on the rest of the tree.
 
 ## Catalog
 
@@ -41,13 +40,12 @@ _How replies and documents read._
 
 | Skill | Does |
 |---|---|
-| [`unslop`](skills/unslop/SKILL.md) | Strip AI tells from written output and give it a voice. Use before delivering any written artifact, and whenever the user says something reads like AI, sounds generic, or is too long. |
 | [`wait-what`](skills/wait-what/SKILL.md) | Re-explain the last answer in plain language. Use only when the user invokes wait-what or says the reply was confusing, unclear, too technical, or did not land. |
 
 Elsewhere:
 
 - [JuliusBrussee/caveman](https://github.com/JuliusBrussee/caveman) — Compressed "caveman" prose for agents; cuts output tokens by about two thirds while keeping code and commands exact.
-- [ayghri/i-have-adhd](https://github.com/ayghri/i-have-adhd) — Stops the agent burying the answer. Same aim as unslop from a different angle.
+- [ayghri/i-have-adhd](https://github.com/ayghri/i-have-adhd) — Stops the agent burying the answer.
 
 ### Research & scraping
 

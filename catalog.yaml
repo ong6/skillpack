@@ -4,12 +4,12 @@ categories:
   - key: writing
     title: Writing
     blurb: How replies and documents read.
-    skills: [unslop, wait-what]
+    skills: [wait-what]
     links:
       - repo: JuliusBrussee/caveman
         note: Compressed "caveman" prose for agents; cuts output tokens by about two thirds while keeping code and commands exact.
       - repo: ayghri/i-have-adhd
-        note: Stops the agent burying the answer. Same aim as unslop from a different angle.
+        note: Stops the agent burying the answer.
   - key: research
     title: Research & scraping
     blurb: Getting text out of the web and video.

@@ -7,7 +7,8 @@ Write a handoff document summarising the current conversation so a fresh agent c
 
 Include a "suggested skills" section in the document, which suggests skills that the agent should invoke.
 
-Run the document through [`unslop`](../unslop/SKILL.md) to ensure it reads clearly without AI tells.
+Before saving, cut generic framing and recap, keep concrete state and next actions, and preserve
+quoted facts, commands, paths, links, uncertainty, and owner-authored wording exactly.
 
 Do not duplicate content already captured in other artifacts (PRDs, plans, ADRs, issues, commits, diffs). Reference them by path or URL instead.
 
