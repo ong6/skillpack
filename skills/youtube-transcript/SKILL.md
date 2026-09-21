@@ -44,3 +44,11 @@ the message gives the manual command) and `FETCH_FAILED` (try a fallback below).
 - Long transcripts: summarize or extract the asked-for parts rather than dumping the whole wall of text, unless the user wants the full text.
 - Note when captions are **auto-generated** (punctuation, names, and numbers are unreliable).
 - When using a transcript as a research source, attribute it to the video (title + channel + URL).
+
+## Response contract
+
+Name the source that actually succeeded: YouTube captions API, `yt-dlp` subtitle track, or browser
+transcript panel. If an earlier method failed, say which fallback supplied the text. For
+auto-generated captions, label them before the summary or transcript and preserve uncertainty in
+names, numbers, and quotations. If every caption method fails, return `No captions available` plus
+the methods tried; never turn page descriptions, comments, or inferred speech into a transcript.
