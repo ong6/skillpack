@@ -49,6 +49,9 @@ Read [options.md](options.md) for tradeoffs and official documentation. Start he
 State the chosen authoring tool, delivery method, reason and one switching condition in a short
 paragraph. Compare only credible alternatives for this task. Do not ask the user to select a
 framework when their requirements already decide it. Do not migrate an engine merely to add a model.
+For a recommendation or audit, lead with four explicit fields: **Route**, **First proof**,
+**Fallback**, and **Release checks**. Keep proposed work separate from results actually rendered or
+measured; never imply that an asset, browser path, or device budget passed when it was not run.
 
 When Blender is selected, read [blender-authoring](../blender-authoring/SKILL.md). For any
 loop, coordinated character action or continuous pan, read [animation.md](animation.md) before
@@ -101,7 +104,10 @@ reduced-motion pose. Avoid introducing a second renderer for an expanded canvas.
 For every route, record model/media provenance and redistribution rights. Set practical download,
 geometry, texture and frame-time budgets from the target page and devices; measure the result.
 Optimize only after checking what is expensive. For rendered media, provide a poster/static
-alternative and verify alpha, codecs, looping and reduced motion in the target browsers.
+alternative and verify alpha, codecs, looping and reduced motion in the target browsers. Decorative
+motion that continues beyond five seconds also needs a visible pause/stop control; if the design
+cannot support one, stop the animation within five seconds and leave the poster visible. Under
+`prefers-reduced-motion`, do not autoplay or preload the moving asset.
 
 ## 5. Verify, revise, integrate
 

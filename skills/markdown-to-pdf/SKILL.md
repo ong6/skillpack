@@ -37,12 +37,19 @@ them as dfont/`.ttc` collections; Chrome's subsetter emits incomplete `glyf` dat
 readers that trust the embedded program drop scattered letters (`significant` → `si ni cant`)
 while every terminal check passes.
 
-**Rule: plain `.ttf` only.** `/System/Library/Fonts/Supplemental/` is nearly all plain TTFs;
-`/System/Library/Fonts/` holds the collections. Defaults: **Arial** body, **Andale Mono** code.
-Verdana, Georgia and Trebuchet MS are also plain TTFs.
+**Rule: plain, static `.ttf` only.** `/System/Library/Fonts/Supplemental/` is nearly all plain
+TTFs; `/System/Library/Fonts/` holds the collections. For this machine, default to **Arial** body
+and **Andale Mono** code. A bundled static open font such as Noto Sans or Inter is also acceptable
+for a cross-machine artifact, but verify that the exact files exist, embed them explicitly with
+`@font-face`, and reject variable-font or OS-fallback substitutions. Never silently switch font
+families between builds.
 
 **Not the bug:** several subsets sharing one base name (`ArialMT` ×4). Chrome subsets per page;
 don't "fix" it.
+
+In the handoff, name the exact body/code font files used, the Pandoc reader, both rasterizers,
+and whether every page was visually checked. A terminal-only font or text-extraction check does
+not count as a verified PDF.
 
 ## Pandoc gotchas
 
