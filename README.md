@@ -40,7 +40,6 @@ _How replies and documents read._
 
 | Skill | Does |
 |---|---|
-| [`wait-what`](skills/wait-what/SKILL.md) | Re-explain the last answer in plain language. Use only when the user invokes wait-what or says the reply was confusing, unclear, too technical, or did not land. |
 
 Elsewhere:
 

@@ -4,7 +4,7 @@ categories:
   - key: writing
     title: Writing
     blurb: How replies and documents read.
-    skills: [wait-what]
+    skills: []
     links:
       - repo: JuliusBrussee/caveman
         note: Compressed "caveman" prose for agents; cuts output tokens by about two thirds while keeping code and commands exact.
