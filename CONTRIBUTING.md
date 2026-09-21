@@ -1,0 +1,15 @@
+# Contributing
+
+Bug fixes and small, reusable improvements are welcome. Open an issue before adding a new skill so
+the trigger boundary, portability and overlap with existing skills can be agreed first.
+
+Each skill lives in `skills/<name>/SKILL.md`. Add it to exactly one category in `catalog.yaml`, then
+run:
+
+```sh
+python3 scripts/build-catalog.py
+bash scripts/test-sync.sh
+```
+
+Keep private paths, accounts and prices out of this repository. A skill should work outside the
+repo where it was written.

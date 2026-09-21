@@ -5,10 +5,15 @@ rate. One folder per skill under `skills/`, each with a `SKILL.md` that says whe
 it does. The categories below are the map. A skill lives in exactly one.
 
 This is the pack half of a small family of agent tools: forges make things, packs bundle them.
-[groundplane](https://github.com/ong6/groundplane), [jobforge](https://github.com/ong6/jobforge),
+[Skill Eval Pack](https://github.com/ong6/skill-eval-pack) tests whether a skill improves the same
+task over a no-skill baseline. [Groundplane](https://github.com/ong6/groundplane) checks the
+structured facts produced when an agent runs. Together they cover the instruction, the evidence
+that it helps, and the runtime boundary. [jobforge](https://github.com/ong6/jobforge),
 [skillforge](https://github.com/ong6/skillforge), [deckforge](https://github.com/ong6/deckforge),
 [proofpack](https://github.com/ong6/proofpack), [fieldpack](https://github.com/ong6/fieldpack) and
 [uipack](https://github.com/ong6/uipack) all run these skills.
+
+The write-up and animated sync diagram live at [junxiong.dev/skillpack](https://junxiong.dev/skillpack).
 
 ## Install
 
@@ -31,15 +36,30 @@ script keeps every consumer equal to this repo in both directions. See [Sync](#s
 
 **Copy a single skill:** take its folder. Nothing depends on the rest of the tree.
 
+## Included skills
+
+Eight skills ship today. This table and the category catalog below are generated from
+`catalog.yaml` and each skill's frontmatter; CI fails when the generated README drifts.
+
+<!-- SKILL INDEX START -->
+| Skill | What I use it for |
+|---|---|
+| [`web-extract`](skills/web-extract/SKILL.md) | Read, search and scrape difficult web pages through Firecrawl. |
+| [`youtube-transcript`](skills/youtube-transcript/SKILL.md) | Fetch clean captions from a YouTube video. |
+| [`system-diagram`](skills/system-diagram/SKILL.md) | Turn a real system flow into a polished, readable SVG figure. |
+| [`3d-design`](skills/3d-design/SKILL.md) | Choose the right authoring and browser workflow for a 3D object or animation. |
+| [`blender-authoring`](skills/blender-authoring/SKILL.md) | Build, animate, render and export Blender scenes with Python. |
+| [`markdown-to-pdf`](skills/markdown-to-pdf/SKILL.md) | Turn a Markdown note into a checked, print-ready A4 PDF. |
+| [`handoff`](skills/handoff/SKILL.md) | Leave a compact continuation brief for the next agent or session. |
+| [`feedback-loop`](skills/feedback-loop/SKILL.md) | Record feedback and patch the skill or rule that caused it in the same session. |
+<!-- SKILL INDEX END -->
+
 ## Catalog
 
 <!-- CATALOG START -->
 ### Writing
 
 _How replies and documents read._
-
-| Skill | Does |
-|---|---|
 
 Elsewhere:
 
@@ -114,6 +134,7 @@ Elsewhere:
 
 - [ong6/jobforge](https://github.com/ong6/jobforge) — My interview-prep plugin. Grades the plan you say out loud before you code, records real interviews as state, schedules what broke. Six skills and a SessionStart drill banner.
 - [ong6/groundplane](https://github.com/ong6/groundplane) — My deterministic-boundary library for agent output. Not a skill, but the reference for what an agent may generate versus what code must produce.
+- [ong6/skill-eval-pack](https://github.com/ong6/skill-eval-pack) — My portable A/B gate for new or revised skills. It keeps a skill only when fresh heldout comparisons beat the same agent without it.
 - [ong6/skillforge](https://github.com/ong6/skillforge) — My skill workbench. Discovers, versions and evaluates skills against a baseline; the place a skill from here gets measured before it stays.
 - [ong6/fieldpack](https://github.com/ong6/fieldpack) — My local-first field suite. deckforge (presentations), skillforge (skill evaluation) and proofpack (pilot evidence) as one install.
 - [kirilxd/swe-interview-coach](https://github.com/kirilxd/swe-interview-coach) — Behavioural and system-design prep for Claude Code. jobforge's harness and reference designs derive from it.
@@ -167,3 +188,6 @@ including bootstrap, conflicts, unrelated staged work and existing Git operation
 ## Licence
 
 MIT for everything here. Linked repos carry their own licences.
+
+Contributions are welcome; see [CONTRIBUTING.md](CONTRIBUTING.md). Security reports go through the
+private route in [SECURITY.md](SECURITY.md).

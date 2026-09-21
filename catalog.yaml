@@ -1,5 +1,15 @@
 # Catalog data for README.md. `python3 scripts/build-catalog.py` regenerates the tables from this
 # file plus each skill's SKILL.md frontmatter. Categories are ordered as they appear.
+skill_summaries:
+  web-extract: Read, search and scrape difficult web pages through Firecrawl.
+  youtube-transcript: Fetch clean captions from a YouTube video.
+  system-diagram: Turn a real system flow into a polished, readable SVG figure.
+  3d-design: Choose the right authoring and browser workflow for a 3D object or animation.
+  blender-authoring: Build, animate, render and export Blender scenes with Python.
+  markdown-to-pdf: Turn a Markdown note into a checked, print-ready A4 PDF.
+  handoff: Leave a compact continuation brief for the next agent or session.
+  feedback-loop: Record feedback and patch the skill or rule that caused it in the same session.
+
 categories:
   - key: writing
     title: Writing
@@ -63,6 +73,8 @@ categories:
         note: My interview-prep plugin. Grades the plan you say out loud before you code, records real interviews as state, schedules what broke. Six skills and a SessionStart drill banner.
       - repo: ong6/groundplane
         note: My deterministic-boundary library for agent output. Not a skill, but the reference for what an agent may generate versus what code must produce.
+      - repo: ong6/skill-eval-pack
+        note: My portable A/B gate for new or revised skills. It keeps a skill only when fresh heldout comparisons beat the same agent without it.
       - repo: ong6/skillforge
         note: My skill workbench. Discovers, versions and evaluates skills against a baseline; the place a skill from here gets measured before it stays.
       - repo: ong6/fieldpack

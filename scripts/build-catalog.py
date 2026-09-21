@@ -11,6 +11,7 @@ from pathlib import Path
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
+INDEX_START, INDEX_END = "<!-- SKILL INDEX START -->", "<!-- SKILL INDEX END -->"
 START, END = "<!-- CATALOG START -->", "<!-- CATALOG END -->"
 
 
@@ -27,9 +28,21 @@ def main():
     cat = yaml.safe_load((ROOT / "catalog.yaml").read_text())
     on_disk = {p.name for p in (ROOT / "skills").iterdir() if (p / "SKILL.md").is_file()}
     listed = {s for c in cat["categories"] for s in c.get("skills", [])}
+    summaries = cat.get("skill_summaries", {})
     missing, unlisted = listed - on_disk, on_disk - listed
-    if missing or unlisted:
-        sys.exit(f"catalog drift: missing on disk {sorted(missing)}, not in catalog {sorted(unlisted)}")
+    summary_missing, summary_extra = on_disk - summaries.keys(), summaries.keys() - on_disk
+    if missing or unlisted or summary_missing or summary_extra:
+        sys.exit(
+            f"catalog drift: missing on disk {sorted(missing)}, not in catalog {sorted(unlisted)}, "
+            f"missing summaries {sorted(summary_missing)}, extra summaries {sorted(summary_extra)}"
+        )
+
+    ordered_skills = [s for c in cat["categories"] for s in c.get("skills", [])]
+    index = ["| Skill | What I use it for |", "|---|---|"]
+    for s in ordered_skills:
+        name, _ = frontmatter(ROOT / "skills" / s / "SKILL.md")
+        index.append(f"| [`{name}`](skills/{s}/SKILL.md) | {summaries[s]} |")
+    index_body = "\n".join(index) + "\n"
 
     out = []
     for c in cat["categories"]:
@@ -49,8 +62,11 @@ def main():
 
     readme = ROOT / "README.md"
     text = readme.read_text()
-    if START not in text or END not in text:
-        sys.exit("README.md lacks catalog markers")
+    if INDEX_START not in text or INDEX_END not in text or START not in text or END not in text:
+        sys.exit("README.md lacks generated section markers")
+    head, rest = text.split(INDEX_START, 1)
+    _, tail = rest.split(INDEX_END, 1)
+    text = f"{head}{INDEX_START}\n{index_body}{INDEX_END}{tail}"
     head, rest = text.split(START, 1)
     _, tail = rest.split(END, 1)
     new = f"{head}{START}\n{body}{END}{tail}"
