@@ -9,3 +9,5 @@ and connected it to the shared 3d-design decision and animation review. No upstr
 were executed during installation.
 
 Patched the animation reference to iterate layered action channel bags on Blender 4.4+/5, with a legacy F-curve fallback. The tennis generator uses the layered form; the complete upstream reference collection has not been runtime-tested.
+
+Added `scripts/mcp_toggle.py` and the Live Blender section: switches a project's official Blender MCP server on for live-scene work and off otherwise.

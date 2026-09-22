@@ -20,6 +20,13 @@ result before declaring success**. This skill encodes the non-obvious rules that
 separate scripts that actually work from ones that silently produce garbage
 (duplicate vertices, flipped normals, black renders, context errors).
 
+## Live Blender (MCP)
+
+If the project's `.mcp.json` defines a `blender` server, it is parked off by default to save
+context. For work on a scene open in Blender (inspect, edit live, screenshot), run
+`python3 scripts/mcp_toggle.py on` from this skill's folder; the server connects mid-session.
+Run `off` when the Blender work ends. Headless batch jobs below don't need it.
+
 ## The one rule that matters most: prefer data-API over operators
 
 `bpy.ops.*` operators (e.g. `bpy.ops.mesh.primitive_cube_add`) depend on **context**
