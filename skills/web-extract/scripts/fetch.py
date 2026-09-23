@@ -12,7 +12,7 @@ Fallback for when Firecrawl is down or the credits are gone.
 Usage:
   fetch.py <url> [--raw] [--max-length N] [--start-index N] [--ignore-robots] [--manual]
 
-Exit codes: 0 content · 1 robots.txt refused · 2 fetch or parse error.
+Exit codes: 0 useful content · 1 robots.txt refused · 2 fetch or parse error · 3 thin/JS shell.
 """
 import argparse
 import sys
@@ -21,6 +21,7 @@ from urllib.parse import urlparse, urlunparse
 UA_AUTONOMOUS = "ModelContextProtocol/1.0 (Autonomous; +https://github.com/modelcontextprotocol/servers)"
 UA_MANUAL = "ModelContextProtocol/1.0 (User-Specified; +https://github.com/modelcontextprotocol/servers)"
 BLOCKED_HOSTS = {"linkedin.com", "reddit.com"}
+MIN_USEFUL_CHARS = 500
 
 
 def html_to_markdown(html: str) -> str:
@@ -41,6 +42,15 @@ def robots_url(url: str) -> str:
 def blocked_host(url: str) -> bool:
     host = (urlparse(url).hostname or "").lower().rstrip(".")
     return any(host == blocked or host.endswith(f".{blocked}") for blocked in BLOCKED_HOSTS)
+
+
+def looks_like_thin_shell(content: str, raw: str, is_html: bool) -> bool:
+    """Flag an HTML app shell whose readable body is too small to trust."""
+    if not is_html or len(content.strip()) >= MIN_USEFUL_CHARS:
+        return False
+    lowered = raw.lower()
+    app_signals = ("<script", "__next_data__", "webpack", "/_next/", "type=\"module\"")
+    return len(raw) >= 10_000 and any(signal in lowered for signal in app_signals)
 
 
 def robots_allows(client, url: str, ua: str) -> tuple[bool, str]:
@@ -71,6 +81,7 @@ def main() -> int:
     ap.add_argument("--ignore-robots", action="store_true", help="user asked for this exact page; never overrides blocked hosts")
     ap.add_argument("--manual", action="store_true", help="use the user-specified user agent")
     ap.add_argument("--proxy", default=None)
+    ap.add_argument("--allow-thin", action="store_true", help="return a detected JS/app shell as successful content")
     a = ap.parse_args()
     if blocked_host(a.url):
         print("VERDICT: blocked\nHINT: LinkedIn and Reddit are off-limits even for manual requests or --ignore-robots.", file=sys.stderr)
@@ -106,6 +117,16 @@ def main() -> int:
         prefix = f"Content type {ctype} cannot be simplified to markdown, raw content follows.\n"
 
     total = len(content)
+    if not a.allow_thin and looks_like_thin_shell(content, raw, is_html):
+        print(
+            "VERDICT: thin\n"
+            f"URL: {a.url}\n"
+            f"HTTP: {r.status_code}\n"
+            f"CHARS: {total}\n"
+            "HINT: readable extraction found only a JavaScript/app shell; escalate this URL to Firecrawl.",
+            file=sys.stderr,
+        )
+        return 3
     if a.start_index >= total:
         body = "<error>No more content available.</error>"
     else:
