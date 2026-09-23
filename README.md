@@ -5,11 +5,11 @@ rate. One folder per skill under `skills/`, each with a `SKILL.md` that says whe
 it does. The categories below are the map. A skill lives in exactly one.
 
 This is the pack half of a small family of agent tools: forges make things, packs bundle them.
-[Skill Eval Pack](https://github.com/ong6/skill-eval-pack) tests whether a skill improves the same
-task over a no-skill baseline. [Groundplane](https://github.com/ong6/groundplane) checks the
+[Skillsmith](https://github.com/ong6/skillsmith) makes a skill from what a repo needs and tests
+whether it improves the same task over a no-skill baseline. [Groundplane](https://github.com/ong6/groundplane) checks the
 structured facts produced when an agent runs. Together they cover the instruction, the evidence
 that it helps, and the runtime boundary. [jobforge](https://github.com/ong6/jobforge),
-[skillforge](https://github.com/ong6/skillforge), [deckforge](https://github.com/ong6/deckforge),
+[deckforge](https://github.com/ong6/deckforge),
 [proofpack](https://github.com/ong6/proofpack), [fieldpack](https://github.com/ong6/fieldpack) and
 [uipack](https://github.com/ong6/uipack) all run these skills.
 
@@ -134,9 +134,8 @@ Elsewhere:
 
 - [ong6/jobforge](https://github.com/ong6/jobforge) — My interview-prep plugin. Grades the plan you say out loud before you code, records real interviews as state, schedules what broke. Six skills and a SessionStart drill banner.
 - [ong6/groundplane](https://github.com/ong6/groundplane) — My deterministic-boundary library for agent output. Not a skill, but the reference for what an agent may generate versus what code must produce.
-- [ong6/skill-eval-pack](https://github.com/ong6/skill-eval-pack) — My portable A/B gate for new or revised skills. It keeps a skill only when fresh heldout comparisons beat the same agent without it.
-- [ong6/skillforge](https://github.com/ong6/skillforge) — My skill workbench. Discovers, versions and evaluates skills against a baseline; the place a skill from here gets measured before it stays.
-- [ong6/fieldpack](https://github.com/ong6/fieldpack) — My local-first field suite. deckforge (presentations), skillforge (skill evaluation) and proofpack (pilot evidence) as one install.
+- [ong6/skillsmith](https://github.com/ong6/skillsmith) — My skill maker and gate. Makes a skill from what the repo needs, then keeps it only when fresh heldout comparisons beat the same agent without it.
+- [ong6/fieldpack](https://github.com/ong6/fieldpack) — My local-first field suite. deckforge (presentations) and proofpack (pilot evidence) as one install.
 - [kirilxd/swe-interview-coach](https://github.com/kirilxd/swe-interview-coach) — Behavioural and system-design prep for Claude Code. jobforge's harness and reference designs derive from it.
 
 ### Productivity

@@ -73,12 +73,10 @@ categories:
         note: My interview-prep plugin. Grades the plan you say out loud before you code, records real interviews as state, schedules what broke. Six skills and a SessionStart drill banner.
       - repo: ong6/groundplane
         note: My deterministic-boundary library for agent output. Not a skill, but the reference for what an agent may generate versus what code must produce.
-      - repo: ong6/skill-eval-pack
-        note: My portable A/B gate for new or revised skills. It keeps a skill only when fresh heldout comparisons beat the same agent without it.
-      - repo: ong6/skillforge
-        note: My skill workbench. Discovers, versions and evaluates skills against a baseline; the place a skill from here gets measured before it stays.
+      - repo: ong6/skillsmith
+        note: My skill maker and gate. Makes a skill from what the repo needs, then keeps it only when fresh heldout comparisons beat the same agent without it.
       - repo: ong6/fieldpack
-        note: My local-first field suite. deckforge (presentations), skillforge (skill evaluation) and proofpack (pilot evidence) as one install.
+        note: My local-first field suite. deckforge (presentations) and proofpack (pilot evidence) as one install.
       - repo: kirilxd/swe-interview-coach
         note: Behavioural and system-design prep for Claude Code. jobforge's harness and reference designs derive from it.
   - key: productivity
