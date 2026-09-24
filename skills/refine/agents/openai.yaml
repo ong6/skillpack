@@ -1,0 +1,7 @@
+interface:
+  display_name: "Refine"
+  short_description: "Loop an independent reviewer until the work scores 8+"
+  default_prompt: "Use $refine to review and improve the latest deliverable."
+
+policy:
+  allow_implicit_invocation: false

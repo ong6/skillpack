@@ -9,6 +9,7 @@ skill_summaries:
   markdown-to-pdf: Turn a Markdown note into a checked, print-ready A4 PDF.
   handoff: Leave a compact continuation brief for the next agent or session.
   feedback-loop: Record feedback and patch the skill or rule that caused it in the same session.
+  refine: Loop a fresh independent reviewer over the latest work until it scores 8 or more.
 
 categories:
   - key: writing
@@ -52,7 +53,7 @@ categories:
   - key: workflows
     title: Workflows & agents
     blurb: How sessions hand off, improve, and stay honest.
-    skills: [handoff, feedback-loop]
+    skills: [handoff, feedback-loop, refine]
     links:
       - repo: mattpocock/skills
         note: Matt Pocock's engineering set. grill-me, tdd, to-spec, implement, code-review, diagnosing-bugs.
