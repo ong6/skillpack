@@ -9,7 +9,7 @@ skill_summaries:
   markdown-to-pdf: Turn a Markdown note into a checked, print-ready A4 PDF.
   handoff: Leave a compact continuation brief for the next agent or session.
   feedback-loop: Record feedback and patch the skill or rule that caused it in the same session.
-  refine: Loop a fresh independent reviewer over the latest work until it scores 8 or more.
+  refine: Review and improve the work until its constraints and requested score pass.
 
 categories:
   - key: writing

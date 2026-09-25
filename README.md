@@ -52,7 +52,7 @@ The included skills and category catalog below are generated from
 | [`markdown-to-pdf`](skills/markdown-to-pdf/SKILL.md) | Turn a Markdown note into a checked, print-ready A4 PDF. |
 | [`handoff`](skills/handoff/SKILL.md) | Leave a compact continuation brief for the next agent or session. |
 | [`feedback-loop`](skills/feedback-loop/SKILL.md) | Record feedback and patch the skill or rule that caused it in the same session. |
-| [`refine`](skills/refine/SKILL.md) | Loop a fresh independent reviewer over the latest work until it scores 8 or more. |
+| [`refine`](skills/refine/SKILL.md) | Review and improve the work until its constraints and requested score pass. |
 <!-- SKILL INDEX END -->
 
 ## Catalog
@@ -118,7 +118,7 @@ _How sessions hand off, improve, and stay honest._
 |---|---|
 | [`handoff`](skills/handoff/SKILL.md) | Compact the current conversation into a handoff document. Use when the user asks for a handoff, continuation brief, or context package for another session or agent. |
 | [`feedback-loop`](skills/feedback-loop/SKILL.md) | Capture the owner's feedback about how the agent, a skill, a hook, a rule, or a reply behaved, log it in feedback.md, and patch whatever it targets in the same session so the behaviour changes by default. Fires on "don't do X", "stop doing", "why does it", "next time", "I prefer", "that was wrong", "that's annoying", "can I turn this off", "always" or "never" about agent behaviour, or a correction to a reply; not for feedback on the owner's own writing, on other people, or a one-off instruction for the current task. |
-| [`refine`](skills/refine/SKILL.md) | Explicit-only. Improve the latest deliverable (draft, code, plan, note, design) through a loop of fresh independent reviewer agents that pick task-fit metrics, score it out of 10 and return feedback, refining until it scores 8+ or three rounds pass. Use for "/refine", "refine this", "run the refine loop", "auto-improve this". Not for a single quick edit, a PR or diff review (code-review), or feedback about agent behaviour (feedback-loop). |
+| [`refine`](skills/refine/SKILL.md) | Explicit-only. Improve the latest deliverable (draft, code, plan, note, design) through fresh independent reviewer agents until it meets the requested score and all explicit constraints, or three refinement rounds pass. Use for "/refine", "refine this", "run the refine loop", "auto-improve this". Not for a single quick edit, a PR or diff review (code-review), or feedback about agent behaviour (feedback-loop). |
 
 Elsewhere:
 
