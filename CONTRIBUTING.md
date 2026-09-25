@@ -8,6 +8,8 @@ run:
 
 ```sh
 python3 scripts/build-catalog.py
+python3 scripts/build-catalog.py --check
+python3 scripts/test-catalog.py
 bash scripts/test-sync.sh
 ```
 

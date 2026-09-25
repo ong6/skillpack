@@ -17,6 +17,6 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install PyYAML
-      - run: python3 scripts/build-catalog.py
-      - run: git diff --exit-code README.md
+      - run: python3 scripts/build-catalog.py --check
+      - run: python3 scripts/test-catalog.py
       - run: bash scripts/test-sync.sh

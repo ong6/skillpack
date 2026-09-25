@@ -1,13 +1,16 @@
 #!/usr/bin/env bash
 # Sandbox test for sync.sh: consumer repos and bare upstreams, no network.
 # Run: bash scripts/test-sync.sh   (exit 0 = all scenarios pass)
-set -u
+set -eu
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT
 export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t
 # Never inherit a consumer's hooks or signing setup into these temporary repos.
-export GIT_CONFIG_COUNT=2 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0=/dev/null
+unset GIT_CONFIG_PARAMETERS GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_COMMON_DIR
+mkdir "$T/git-template"
+export GIT_CONFIG_COUNT=3 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0=/dev/null
 export GIT_CONFIG_KEY_1=commit.gpgSign GIT_CONFIG_VALUE_1=false
+export GIT_CONFIG_KEY_2=init.templateDir GIT_CONFIG_VALUE_2="$T/git-template"
 export SKILLS_SYNC_URL="$T/upstream.git" SKILLS_SYNC_REMOTE=skills SKILLS_SYNC_BRANCH=main
 P=.claude/shared-skills
 pass=0; fail=0
@@ -95,6 +98,35 @@ snapshot_outside() {
   cp "$repo/unstaged.txt" "$dest/other"
   [ ! -f "$repo/untracked.txt" ] || cp "$repo/untracked.txt" "$dest/untracked"
 }
+
+# A start/merge may combine local edits with upstream without uploading them.
+# The recorded tree must describe upstream, so the following stop still pushes.
+repo="$T/pending-local"
+fixture "$repo"
+fixture "$T/remote-writer"
+printf 'local pending upload\n' > "$repo/$P/pending-local.md"
+printf 'remote edit\n' > "$T/remote-writer/$P/remote-edit.md"
+sync "$T/remote-writer" --stop 2>/dev/null
+sync "$repo" --fetch
+sync "$repo" --merge 2>/dev/null
+check "merge receives upstream and preserves uncommitted local edits" \
+  "[ -f '$repo/$P/pending-local.md' ] && [ -f '$repo/$P/remote-edit.md' ] && [ -z \"\$(git -C '$repo' status --porcelain)\" ]"
+check "merged local edits are not recorded as already uploaded" \
+  "[ \"\$(sed -n 's/^tree=//p' '$repo/.git/skills-sync')\" = \"\$(git -C '$T/upstream.git' rev-parse 'main^{tree}')\" ]"
+sync "$repo" --stop 2>/dev/null
+check "stop uploads local edits after a start-time merge" \
+  "git -C '$T/upstream.git' show main:pending-local.md 2>/dev/null | grep -q 'local pending upload'"
+
+# Status advertises itself as read-only even before a remote has been installed.
+repo="$T/status-only"
+mk "$repo"
+mkdir -p "$repo/$P"
+cp -R "$HERE/scripts" "$repo/$P/"
+git -C "$repo" add -A
+git -C "$repo" commit -qm "install scripts"
+cp "$repo/.git/config" "$T/status-config-before"
+sync "$repo" --status >/dev/null
+check "status does not install a remote" "cmp -s '$T/status-config-before' '$repo/.git/config'"
 
 # Each individual kind of unrelated work defers push, while the skills commit
 # still happens. The mixed case preserves staging and worktree bytes separately.
@@ -196,6 +228,135 @@ rc=0; out="$(sync "$repo" --stop 2>&1)" || rc=$?
 git -C "$repo" ls-files --stage > "$T/unmerged-after"
 check "unmerged index defers without clearing staged conflict entries" \
   "[ $rc -eq 0 ] && echo \"$out\" | grep -q 'unmerged index entries' && cmp -s '$T/unmerged-before' '$T/unmerged-after' && cmp -s '$T/operation-state' '$repo/.git/skills-sync' && [ '$head_before' = \"\$(git -C '$repo' rev-parse HEAD)\" ]"
+
+# Ignored local files must survive incoming additions, including file/directory
+# collisions. Unrelated ignored caches must not prevent a safe merge.
+fixture "$T/ignored-writer"
+for kind in file directory parent-file; do
+  repo="$T/ignored-$kind"
+  fixture "$repo"
+  mkdir -p "$repo/.git/info"
+  printf '*.local\n*.cache\n' > "$repo/.git/info/exclude"
+  printf 'harmless cache\n' > "$repo/$P/scripts/unrelated.cache"
+  collision="ignored-$kind.local"
+  case "$kind" in
+    directory)
+      mkdir "$repo/$P/$collision"
+      printf 'owner bytes\n' > "$repo/$P/$collision/child"
+      printf 'upstream bytes\n' > "$T/ignored-writer/$P/$collision" ;;
+    parent-file)
+      printf 'owner bytes\n' > "$repo/$P/$collision"
+      mkdir "$T/ignored-writer/$P/$collision"
+      printf 'upstream bytes\n' > "$T/ignored-writer/$P/$collision/child" ;;
+    *)
+      printf 'owner bytes\n' > "$repo/$P/$collision"
+      printf 'upstream bytes\n' > "$T/ignored-writer/$P/$collision" ;;
+  esac
+  cp -R "$repo/$P/$collision" "$T/ignored-$kind-before"
+  sync "$T/ignored-writer" --stop 2>/dev/null
+  sync "$repo" --fetch
+  cp "$repo/.git/skills-sync" "$T/ignored-$kind-state"
+  head_before="$(git -C "$repo" rev-parse HEAD)"
+  rc=0; out="$(sync "$repo" --merge 2>&1)" || rc=$?
+  check "ignored $kind collision defers with bytes and state intact" \
+    "[ $rc -eq 0 ] && echo \"$out\" | grep -q 'ignored local path overlaps' && diff -r '$T/ignored-$kind-before' '$repo/$P/$collision' >/dev/null && cmp -s '$T/ignored-$kind-state' '$repo/.git/skills-sync' && [ '$head_before' = \"\$(git -C '$repo' rev-parse HEAD)\" ]"
+  rm -rf "$repo/$P/$collision"
+  sync "$repo" --merge 2>/dev/null
+  check "unrelated ignored cache permits $kind merge" \
+    "[ \"\$(git -C '$repo' rev-parse 'HEAD:$P')\" = \"\$(git -C '$T/upstream.git' rev-parse 'main^{tree}')\" ] && grep -q 'harmless cache' '$repo/$P/scripts/unrelated.cache'"
+done
+
+# An explicit URL cannot be silently ignored in favor of an existing fetch or
+# push URL. Reject before committing local edits or touching either destination.
+for kind in fetch push; do
+  repo="$T/url-$kind"
+  fixture "$repo"
+  git init -q --bare -b main "$T/url-$kind-intended.git"
+  expected_url="$T/url-$kind-intended.git"
+  if [ "$kind" = push ]; then
+    git -C "$repo" remote set-url --push skills "$expected_url"
+    expected_url="$T/upstream.git"
+  fi
+  printf 'pending local\n' > "$repo/$P/url-local.md"
+  head_before="$(git -C "$repo" rev-parse HEAD)"
+  upstream_before="$(git -C "$T/upstream.git" rev-parse main)"
+  rc=0; out="$(SKILLS_SYNC_URL="$expected_url" sync "$repo" --stop 2>&1)" || rc=$?
+  check "explicit URL mismatch in $kind destination defers before mutation" \
+    "[ $rc -eq 0 ] && echo \"$out\" | grep -q 'differs from SKILLS_SYNC_URL' && [ '$head_before' = \"\$(git -C '$repo' rev-parse HEAD)\" ] && [ '$upstream_before' = \"\$(git -C '$T/upstream.git' rev-parse main)\" ] && ! git -C '$T/url-$kind-intended.git' rev-parse --verify main >/dev/null 2>&1"
+done
+
+repo="$T/changed-target"
+fixture "$repo"
+git init -q --bare -b main "$T/changed-target.git"
+SKILLS_SYNC_URL="$T/changed-target.git" SKILLS_SYNC_REMOTE=alternate sync "$repo" --stop 2>/dev/null
+check "unchanged tree still bootstraps a newly selected destination" \
+  "[ \"\$(git -C '$repo' rev-parse 'HEAD:$P')\" = \"\$(git -C '$T/changed-target.git' rev-parse 'main^{tree}')\" ]"
+
+repo="$T/retargeted-remote"
+fixture "$repo"
+git init -q --bare -b main "$T/retargeted-remote.git"
+git -C "$repo" remote set-url skills "$T/retargeted-remote.git"
+cp "$repo/.git/skills-sync" "$T/retarget-state-before"
+SKILLS_SYNC_URL="$T/retargeted-remote.git" sync "$repo" --start 2>/dev/null
+check "failed fetch after URL change cannot adopt the old cached ref" \
+  "cmp -s '$T/retarget-state-before' '$repo/.git/skills-sync'"
+SKILLS_SYNC_URL="$T/retargeted-remote.git" sync "$repo" --merge 2>/dev/null
+check "direct merge cannot adopt a cached ref from the old URL" \
+  "cmp -s '$T/retarget-state-before' '$repo/.git/skills-sync'"
+SKILLS_SYNC_URL="$T/retargeted-remote.git" sync "$repo" --stop 2>/dev/null
+check "stop bootstraps retargeted empty remote after start defers" \
+  "[ \"\$(git -C '$repo' rev-parse 'HEAD:$P')\" = \"\$(git -C '$T/retargeted-remote.git' rev-parse 'main^{tree}')\" ]"
+
+# Shell quoting does not make a Git pathspec literal. A glob in the installed
+# folder name must not stage or commit a matching sibling's private files.
+repo="$T/glob-prefix"
+mk "$repo"
+mkdir -p "$repo/pack*" "$repo/package-private"
+cp -R "$HERE/scripts" "$repo/pack*/"
+printf 'base\n' > "$repo/package-private/private.txt"
+git -C "$repo" add -A
+git -C "$repo" commit -qm "install glob prefix"
+printf 'private staged change\n' > "$repo/package-private/private.txt"
+git -C "$repo" add package-private/private.txt
+printf 'skill edit\n' > "$repo/pack*/skill.txt"
+git -C "$repo" diff --cached --binary > "$T/glob-index-before"
+bash "$repo/pack*/scripts/sync.sh" --stop 2>/dev/null
+git -C "$repo" diff --cached --binary > "$T/glob-index-after"
+check "glob prefix commits only its own files and preserves outside staging" \
+  "cmp -s '$T/glob-index-before' '$T/glob-index-after' && [ \"\$(git -C '$repo' diff-tree --no-commit-id --name-only -r HEAD)\" = 'pack*/skill.txt' ]"
+
+# Upstream can advance after accepting our push but before the following fetch.
+# A receive hook creates that race deterministically, without timing or network.
+repo="$T/push-race"
+fixture "$repo"
+git clone -q --bare "$T/upstream.git" "$T/race-upstream.git"
+git -C "$repo" remote set-url skills "$T/race-upstream.git"
+git -C "$repo" config remote.skills.receivepack 'git -c core.hooksPath=hooks receive-pack'
+# Record the new destination before adding the pending local edit.
+SKILLS_SYNC_URL="$T/race-upstream.git" sync "$repo" --fetch
+SKILLS_SYNC_URL="$T/race-upstream.git" sync "$repo" --merge 2>/dev/null
+mkdir -p "$T/race-upstream.git/hooks"
+cat > "$T/race-upstream.git/hooks/post-receive" <<'HOOK'
+#!/usr/bin/env bash
+set -eu
+while read -r old new ref; do
+  [ "$ref" = refs/heads/main ] || continue
+  blob=$(printf 'upstream changed this after our push\n' | git hash-object -w --stdin)
+  tree=$({ git ls-tree "$new" | grep -v $'\tpush-race.md$'; printf '100644 blob %s\tpush-race.md\n' "$blob"; } | git mktree)
+  commit=$(printf 'concurrent upstream edit\n' | git commit-tree "$tree" -p "$new")
+  git update-ref "$ref" "$commit" "$new"
+done
+HOOK
+chmod +x "$T/race-upstream.git/hooks/post-receive"
+printf 'our pending edit\n' > "$repo/$P/push-race.md"
+cp "$repo/.git/skills-sync" "$T/race-state-before"
+rc=0; out="$(SKILLS_SYNC_URL="$T/race-upstream.git" sync "$repo" --stop 2>&1)" || rc=$?
+check "post-push conflict is reported instead of claiming success" \
+  "[ $rc -eq 2 ] && echo \"$out\" | grep -q CONFLICT"
+check "post-push conflict preserves state and local edit" \
+  "cmp -s '$T/race-state-before' '$repo/.git/skills-sync' && grep -q 'our pending edit' '$repo/$P/push-race.md' && [ -z \"\$(git -C '$repo' status --porcelain)\" ] && [ ! -e '$repo/.git/MERGE_HEAD' ]"
+rc=0; SKILLS_SYNC_URL="$T/race-upstream.git" sync "$repo" --merge >/dev/null 2>&1 || rc=$?
+check "failed post-push merge remains pending on retry" "[ $rc -eq 2 ]"
 
 echo "sync tests: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

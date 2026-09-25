@@ -38,7 +38,7 @@ script keeps every consumer equal to this repo in both directions. See [Sync](#s
 
 ## Included skills
 
-Nine skills ship today. This table and the category catalog below are generated from
+The included skills and category catalog below are generated from
 `catalog.yaml` and each skill's frontmatter; CI fails when the generated README drifts.
 
 <!-- SKILL INDEX START -->
@@ -165,13 +165,18 @@ consumer repo.
 | `--stop` | session end | commit folder edits, merge upstream if it moved, push, record the sync point |
 | `--status` | by hand | print prefix, remote, local tree, last synced point |
 
-State lives in `.git/skills-sync`, per clone. A conflict aborts the merge, leaves the tree clean and
-exits 2 with the command to resolve it. A missing network or an empty upstream never fails a hook.
+State lives in `.git/skills-sync`, bound to the subtree and its remote destination. A conflict
+aborts the merge, leaves the tree clean and exits 2 with the command to resolve it. A missing
+network or an empty upstream never fails a hook.
+The recorded tree describes upstream; local edits preserved by a merge stay pending for upload.
 The first `--start` on a new clone fetches synchronously; subsequent starts use the cached ref.
 Commits include only the skills folder, even if other files are staged. Unrelated staged, unstaged
 or untracked work defers merging and pushing, leaving the recorded sync point unchanged. An
 existing merge, rebase, cherry-pick, revert or unmerged index defers the whole sync before a commit.
 The next run retries after that work is resolved.
+Ignored local files that overlap incoming upstream paths defer merging. An explicit
+`SKILLS_SYNC_URL` that differs from an existing remote's fetch or push URL also defers sync;
+select a matching remote or update its URL explicitly.
 The first `--stop` against an empty upstream creates it from the folder. Overrides:
 `SKILLS_SYNC_URL`, `SKILLS_SYNC_REMOTE` (default `skills`), `SKILLS_SYNC_BRANCH` (default `main`).
 
@@ -182,6 +187,8 @@ including bootstrap, conflicts, unrelated staged work and existing Git operation
 
 - Add a skill: folder under `skills/`, add its name to a category in `catalog.yaml`, run
   `python3 scripts/build-catalog.py`. The build fails if the tree and the catalog disagree.
+- Verify without changing files: `python3 scripts/build-catalog.py --check`. Duplicate category
+  membership, invalid skill metadata and damaged generated-section markers also fail the build.
 - Add a link: a `repo` and a one-line `note` under a category's `links`, then rebuild.
 - Keep skills generic. Anything that names a private path, account or price stays in the consumer
   repo.
