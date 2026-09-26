@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "actions": ["analyze", "apply", "build", "check", "compare", "convert", "create", "debug", "design", "discuss", "draw", "evaluate", "export", "extract", "fetch", "find", "improve", "manage", "organize", "plan", "prepare", "publish", "read", "record", "review", "save", "search", "summarize", "teach", "test", "validate", "write"],
+  "maximum_tokens": 5,
+  "maximum_characters": 64,
+  "filler_tokens": ["a", "an", "the"]
+}

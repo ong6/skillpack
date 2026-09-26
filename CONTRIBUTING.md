@@ -1,5 +1,8 @@
 # Contributing
 
+Name skills by their job using the [verb-object convention](NAMING.md). Run
+`python3 scripts/check-names.py` and `python3 scripts/test-names.py` alongside the catalog checks.
+
 Bug fixes and small, reusable improvements are welcome. Open an issue before adding a new skill so
 the trigger boundary, portability and overlap with existing skills can be agreed first.
 

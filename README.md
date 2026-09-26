@@ -1,12 +1,12 @@
-# skillpack
+# Skillpack — Agent Skills
 
 Agent skills I use across my repos, for Claude Code and Codex, plus links to other people's skills I
 rate. One folder per skill under `skills/`, each with a `SKILL.md` that says when it fires and what
 it does. The categories below are the map. A skill lives in exactly one.
 
-This is the pack half of a small family of agent tools: forges make things, packs bundle them.
-[Skillsmith](https://github.com/ong6/skillsmith) makes a skill from what a repo needs and tests
-whether it improves the same task over a no-skill baseline. [Groundplane](https://github.com/ong6/groundplane) checks the
+This collection works with two complementary tools.
+[Skillsmith — Skill Builder and Evaluator](https://github.com/ong6/skillsmith) makes a skill from what a repo needs and tests
+whether it improves the same task over a no-skill baseline. [Groundplane — Agent Fact Checks](https://github.com/ong6/groundplane) checks the
 structured facts produced when an agent runs. Together they cover the instruction, the evidence
 that it helps, and the runtime boundary. [jobforge](https://github.com/ong6/jobforge),
 [deckforge](https://github.com/ong6/deckforge),
@@ -44,15 +44,15 @@ The included skills and category catalog below are generated from
 <!-- SKILL INDEX START -->
 | Skill | What I use it for |
 |---|---|
-| [`web-extract`](skills/web-extract/SKILL.md) | Read, search and scrape difficult web pages through Firecrawl. |
-| [`youtube-transcript`](skills/youtube-transcript/SKILL.md) | Fetch clean captions from a YouTube video. |
-| [`system-diagram`](skills/system-diagram/SKILL.md) | Turn a real system flow into a polished, readable SVG figure. |
-| [`3d-design`](skills/3d-design/SKILL.md) | Choose the right authoring and browser workflow for a 3D object or animation. |
-| [`blender-authoring`](skills/blender-authoring/SKILL.md) | Build, animate, render and export Blender scenes with Python. |
-| [`markdown-to-pdf`](skills/markdown-to-pdf/SKILL.md) | Turn a Markdown note into a checked, print-ready A4 PDF. |
-| [`handoff`](skills/handoff/SKILL.md) | Leave a compact continuation brief for the next agent or session. |
-| [`feedback-loop`](skills/feedback-loop/SKILL.md) | Record feedback and patch the skill or rule that caused it in the same session. |
-| [`refine`](skills/refine/SKILL.md) | Review and improve the work until its constraints and requested score pass. |
+| [`read-webpage`](skills/read-webpage/SKILL.md) | Read, search and scrape difficult web pages through Firecrawl. |
+| [`fetch-youtube-transcript`](skills/fetch-youtube-transcript/SKILL.md) | Fetch clean captions from a YouTube video. |
+| [`draw-system-diagram`](skills/draw-system-diagram/SKILL.md) | Turn a real system flow into a polished, readable SVG figure. |
+| [`design-3d`](skills/design-3d/SKILL.md) | Choose the right authoring and browser workflow for a 3D object or animation. |
+| [`build-blender-scene`](skills/build-blender-scene/SKILL.md) | Build, animate, render and export Blender scenes with Python. |
+| [`export-markdown-pdf`](skills/export-markdown-pdf/SKILL.md) | Turn a Markdown note into a checked, print-ready A4 PDF. |
+| [`write-handoff`](skills/write-handoff/SKILL.md) | Leave a compact continuation brief for the next agent or session. |
+| [`apply-feedback`](skills/apply-feedback/SKILL.md) | Record feedback and patch the skill or rule that caused it in the same session. |
+| [`improve-work`](skills/improve-work/SKILL.md) | Review and improve the work until its constraints and requested score pass. |
 <!-- SKILL INDEX END -->
 
 ## Catalog
@@ -73,12 +73,12 @@ _Getting text out of the web and video._
 
 | Skill | Does |
 |---|---|
-| [`web-extract`](skills/web-extract/SKILL.md) | Read or extract a web page with a local readability fetch first, escalating to Firecrawl only for JavaScript shells, blocked/thin results, public PDFs, structured extraction or browser interaction. Also use for live web searches that need Firecrawl. Not for YouTube (youtube-transcript) or LinkedIn (off-limits). |
-| [`youtube-transcript`](skills/youtube-transcript/SKILL.md) | Fetch clean transcripts or captions from YouTube URLs or video IDs. Use when the user shares a YouTube link or asks to transcribe, summarize, cite, or read a video. |
+| [`read-webpage`](skills/read-webpage/SKILL.md) | Read or extract a web page with a local readability fetch first, escalating to Firecrawl only for JavaScript shells, blocked/thin results, public PDFs, structured extraction or browser interaction. Also use for live web searches that need Firecrawl. Not for YouTube (fetch-youtube-transcript) or LinkedIn (off-limits). |
+| [`fetch-youtube-transcript`](skills/fetch-youtube-transcript/SKILL.md) | Fetch clean transcripts or captions from YouTube URLs or video IDs. Use when the user shares a YouTube link or asks to transcribe, summarize, cite, or read a video. |
 
 Elsewhere:
 
-- [firecrawl/firecrawl-claude-plugin](https://github.com/firecrawl/firecrawl-claude-plugin) — Firecrawl's official plugin. web-extract wraps the same CLI.
+- [firecrawl/firecrawl-claude-plugin](https://github.com/firecrawl/firecrawl-claude-plugin) — Firecrawl's official plugin. read-webpage wraps the same CLI.
 - [tavily-ai/skills](https://github.com/tavily-ai/skills) — Search, extract, crawl and deep research over the Tavily API.
 - [exa-labs/exa-mcp-server](https://github.com/exa-labs/exa-mcp-server) — Neural web search and page fetch as an MCP server.
 
@@ -88,9 +88,9 @@ _Diagrams, interfaces, visual judgment._
 
 | Skill | Does |
 |---|---|
-| [`system-diagram`](skills/system-diagram/SKILL.md) | Draw a polished system or architecture diagram as hand-authored inline SVG: request flows, RAG and agent pipelines, ingest queues, service maps, before/after comparisons. Use for "system diagram", "architecture diagram", "draw the flow", "diagram how X works", or a figure for a website, a case study, a README, or a research note. Not for charts of data (dataviz), UI mockups (design), or a one-hop relationship that a sentence explains faster. |
-| [`3d-design`](skills/3d-design/SKILL.md) | Choose and use a 3D design workflow for UI illustrations, modeled objects, character animation, interactive scenes and web delivery. Use for "3D design", "3D animation", "model this", "Blender or Three.js", "make the movement natural", "seamless loop", "continuous pan", or selecting and switching 3D tools. Covers authoring, runtime, export and visual verification; not ordinary page layout, 2D architecture diagrams or unrelated Blender installation troubleshooting. |
-| [`blender-authoring`](skills/blender-authoring/SKILL.md) | Create, edit, animate, export and render Blender scenes using headless Python (bpy). Use after 3d-design selects Blender, or when the user explicitly requests Blender or a blend file. Covers geometry, materials, rigging, animation, lighting and export. Not for choosing between 3D tools, Three.js playback or ordinary page layout. |
+| [`draw-system-diagram`](skills/draw-system-diagram/SKILL.md) | Draw a polished system or architecture diagram as hand-authored inline SVG: request flows, RAG and agent pipelines, ingest queues, service maps, before/after comparisons. Use for "system diagram", "architecture diagram", "draw the flow", "diagram how X works", or a figure for a website, a case study, a README, or a research note. Not for charts of data (dataviz), UI mockups (design), or a one-hop relationship that a sentence explains faster. |
+| [`design-3d`](skills/design-3d/SKILL.md) | Choose and use a 3D design workflow for UI illustrations, modeled objects, character animation, interactive scenes and web delivery. Use for "3D design", "3D animation", "model this", "Blender or Three.js", "make the movement natural", "seamless loop", "continuous pan", or selecting and switching 3D tools. Covers authoring, runtime, export and visual verification; not ordinary page layout, 2D architecture diagrams or unrelated Blender installation troubleshooting. |
+| [`build-blender-scene`](skills/build-blender-scene/SKILL.md) | Create, edit, animate, export and render Blender scenes using headless Python (bpy). Use after design-3d selects Blender, or when the user explicitly requests Blender or a blend file. Covers geometry, materials, rigging, animation, lighting and export. Not for choosing between 3D tools, Three.js playback or ordinary page layout. |
 
 Elsewhere:
 
@@ -104,7 +104,7 @@ _Producing files people print or send._
 
 | Skill | Does |
 |---|---|
-| [`markdown-to-pdf`](skills/markdown-to-pdf/SKILL.md) | Convert a markdown note into a verified, print-ready A4 PDF. Use for printable notes, meeting handouts, or rebuilding generated PDFs; not for editing existing PDFs or building a LaTeX document. |
+| [`export-markdown-pdf`](skills/export-markdown-pdf/SKILL.md) | Convert a markdown note into a verified, print-ready A4 PDF. Use for printable notes, meeting handouts, or rebuilding generated PDFs; not for editing existing PDFs or building a LaTeX document. |
 
 Elsewhere:
 
@@ -116,9 +116,9 @@ _How sessions hand off, improve, and stay honest._
 
 | Skill | Does |
 |---|---|
-| [`handoff`](skills/handoff/SKILL.md) | Compact the current conversation into a handoff document. Use when the user asks for a handoff, continuation brief, or context package for another session or agent. |
-| [`feedback-loop`](skills/feedback-loop/SKILL.md) | Capture the owner's feedback about how the agent, a skill, a hook, a rule, or a reply behaved, log it in feedback.md, and patch whatever it targets in the same session so the behaviour changes by default. Fires on "don't do X", "stop doing", "why does it", "next time", "I prefer", "that was wrong", "that's annoying", "can I turn this off", "always" or "never" about agent behaviour, or a correction to a reply; not for feedback on the owner's own writing, on other people, or a one-off instruction for the current task. |
-| [`refine`](skills/refine/SKILL.md) | Explicit-only. Improve the latest deliverable (draft, code, plan, note, design) through fresh independent reviewer agents until it meets the requested score and all explicit constraints, or three refinement rounds pass. Use for "/refine", "refine this", "run the refine loop", "auto-improve this". Not for a single quick edit, a PR or diff review (code-review), or feedback about agent behaviour (feedback-loop). |
+| [`write-handoff`](skills/write-handoff/SKILL.md) | Compact the current conversation into a handoff document. Use when the user asks for a handoff, continuation brief, or context package for another session or agent. |
+| [`apply-feedback`](skills/apply-feedback/SKILL.md) | Capture the owner's feedback about how the agent, a skill, a hook, a rule, or a reply behaved, log it in feedback.md, and patch whatever it targets in the same session so the behaviour changes by default. Fires on "don't do X", "stop doing", "why does it", "next time", "I prefer", "that was wrong", "that's annoying", "can I turn this off", "always" or "never" about agent behaviour, or a correction to a reply; not for feedback on the owner's own writing, on other people, or a one-off instruction for the current task. |
+| [`improve-work`](skills/improve-work/SKILL.md) | Explicit-only. Improve the latest deliverable (draft, code, plan, note, design) through fresh independent reviewer agents until it meets the requested score and all explicit constraints, or three refinement rounds pass. Use for "/improve-work", "refine this", "run the refine loop", "auto-improve this". Not for a single quick edit, a PR or diff review (code-review), or feedback about agent behaviour (apply-feedback). |
 
 Elsewhere:
 
@@ -134,7 +134,7 @@ _Interview drilling, resumes, job search. The private versions stay in my store;
 
 Elsewhere:
 
-- [ong6/jobforge](https://github.com/ong6/jobforge) — My interview-prep plugin. Grades the plan you say out loud before you code, records real interviews as state, schedules what broke. Six skills and a SessionStart drill banner.
+- [ong6/jobforge](https://github.com/ong6/jobforge) — My interview preparation plugin. Grades the plan you say out loud before you code, records real interviews as state, schedules what broke. Six skills and a SessionStart drill banner.
 - [ong6/groundplane](https://github.com/ong6/groundplane) — My deterministic-boundary library for agent output. Not a skill, but the reference for what an agent may generate versus what code must produce.
 - [ong6/skillsmith](https://github.com/ong6/skillsmith) — My skill maker and gate. Makes a skill from what the repo needs, then keeps it only when fresh heldout comparisons beat the same agent without it.
 - [ong6/fieldpack](https://github.com/ong6/fieldpack) — My local-first field suite. deckforge (presentations) and proofpack (pilot evidence) as one install.
@@ -184,6 +184,9 @@ The first `--stop` against an empty upstream creates it from the folder. Overrid
 including bootstrap, conflicts, unrelated staged work and existing Git operations.
 
 ## Maintaining
+
+Skill names follow [the action-object convention](NAMING.md), enforced by `python3 scripts/check-names.py`.
+The naming migration table includes old identifiers for updating hand-maintained commands and links.
 
 - Add a skill: folder under `skills/`, add its name to a category in `catalog.yaml`, run
   `python3 scripts/build-catalog.py`. The build fails if the tree and the catalog disagree.

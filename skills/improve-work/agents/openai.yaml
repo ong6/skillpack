@@ -1,7 +1,7 @@
 interface:
-  display_name: "Refine"
+  display_name: "Improve Work"
   short_description: "Review and improve until constraints and score pass"
-  default_prompt: "Use $refine to review and improve the latest deliverable."
+  default_prompt: "Use $improve-work to review and improve the latest deliverable."
 
 policy:
   allow_implicit_invocation: false

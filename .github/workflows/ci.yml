@@ -18,5 +18,7 @@ jobs:
           python-version: "3.12"
       - run: pip install PyYAML
       - run: python3 scripts/build-catalog.py --check
+      - run: python3 scripts/check-names.py
+      - run: python3 scripts/test-names.py
       - run: python3 scripts/test-catalog.py
       - run: bash scripts/test-sync.sh

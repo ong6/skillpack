@@ -1,9 +1,9 @@
 ---
-name: youtube-transcript
+name: fetch-youtube-transcript
 description: Fetch clean transcripts or captions from YouTube URLs or video IDs. Use when the user shares a YouTube link or asks to transcribe, summarize, cite, or read a video.
 ---
 
-# YouTube Transcript
+# Fetch YouTube Transcript
 
 Turn a YouTube link into readable text. Works for normal videos, Shorts, and
 auto-generated captions.

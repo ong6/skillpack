@@ -1,5 +1,5 @@
 ---
-name: 3d-design
+name: design-3d
 description: >-
   Choose and use a 3D design workflow for UI illustrations, modeled objects, character animation,
   interactive scenes and web delivery. Use for "3D design", "3D animation", "model this",
@@ -8,7 +8,7 @@ description: >-
   2D architecture diagrams or unrelated Blender installation troubleshooting.
 ---
 
-# 3D design
+# Design 3D
 
 Choose the workflow from the visual and interaction needs. Do not default to constructing every
 object from browser primitives. Blender authors assets; Three.js displays and controls scenes.
@@ -53,7 +53,7 @@ For a recommendation or audit, lead with four explicit fields: **Route**, **Firs
 **Fallback**, and **Release checks**. Keep proposed work separate from results actually rendered or
 measured; never imply that an asset, browser path, or device budget passed when it was not run.
 
-When Blender is selected, read [blender-authoring](../blender-authoring/SKILL.md). For any
+When Blender is selected, read [build-blender-scene](../build-blender-scene/SKILL.md). For any
 loop, coordinated character action or continuous pan, read [animation.md](animation.md) before
 implementation. It defines contact, timeline, loop-boundary and player checks. Keep tool selection
 here; use the companion for Blender execution details.

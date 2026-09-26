@@ -1,15 +1,15 @@
 # Catalog data for README.md. `python3 scripts/build-catalog.py` regenerates the tables from this
 # file plus each skill's SKILL.md frontmatter. Categories are ordered as they appear.
 skill_summaries:
-  web-extract: Read, search and scrape difficult web pages through Firecrawl.
-  youtube-transcript: Fetch clean captions from a YouTube video.
-  system-diagram: Turn a real system flow into a polished, readable SVG figure.
-  3d-design: Choose the right authoring and browser workflow for a 3D object or animation.
-  blender-authoring: Build, animate, render and export Blender scenes with Python.
-  markdown-to-pdf: Turn a Markdown note into a checked, print-ready A4 PDF.
-  handoff: Leave a compact continuation brief for the next agent or session.
-  feedback-loop: Record feedback and patch the skill or rule that caused it in the same session.
-  refine: Review and improve the work until its constraints and requested score pass.
+  read-webpage: Read, search and scrape difficult web pages through Firecrawl.
+  fetch-youtube-transcript: Fetch clean captions from a YouTube video.
+  draw-system-diagram: Turn a real system flow into a polished, readable SVG figure.
+  design-3d: Choose the right authoring and browser workflow for a 3D object or animation.
+  build-blender-scene: Build, animate, render and export Blender scenes with Python.
+  export-markdown-pdf: Turn a Markdown note into a checked, print-ready A4 PDF.
+  write-handoff: Leave a compact continuation brief for the next agent or session.
+  apply-feedback: Record feedback and patch the skill or rule that caused it in the same session.
+  improve-work: Review and improve the work until its constraints and requested score pass.
 
 categories:
   - key: writing
@@ -24,10 +24,10 @@ categories:
   - key: research
     title: Research & scraping
     blurb: Getting text out of the web and video.
-    skills: [web-extract, youtube-transcript]
+    skills: [read-webpage, fetch-youtube-transcript]
     links:
       - repo: firecrawl/firecrawl-claude-plugin
-        note: Firecrawl's official plugin. web-extract wraps the same CLI.
+        note: Firecrawl's official plugin. read-webpage wraps the same CLI.
       - repo: tavily-ai/skills
         note: Search, extract, crawl and deep research over the Tavily API.
       - repo: exa-labs/exa-mcp-server
@@ -35,7 +35,7 @@ categories:
   - key: design
     title: Design
     blurb: Diagrams, interfaces, visual judgment.
-    skills: [system-diagram, 3d-design, blender-authoring]
+    skills: [draw-system-diagram, design-3d, build-blender-scene]
     links:
       - repo: tt-a1i/archify
         note: Turns a codebase or a description into interactive architecture and sequence diagrams as self-contained HTML.
@@ -46,14 +46,14 @@ categories:
   - key: documents
     title: Documents
     blurb: Producing files people print or send.
-    skills: [markdown-to-pdf]
+    skills: [export-markdown-pdf]
     links:
       - repo: anthropics/skills
         note: Anthropic's docx, pdf, pptx and xlsx skills live here (source-available, not open source).
   - key: workflows
     title: Workflows & agents
     blurb: How sessions hand off, improve, and stay honest.
-    skills: [handoff, feedback-loop, refine]
+    skills: [write-handoff, apply-feedback, improve-work]
     links:
       - repo: mattpocock/skills
         note: Matt Pocock's engineering set. grill-me, tdd, to-spec, implement, code-review, diagnosing-bugs.
@@ -71,7 +71,7 @@ categories:
     skills: []
     links:
       - repo: ong6/jobforge
-        note: My interview-prep plugin. Grades the plan you say out loud before you code, records real interviews as state, schedules what broke. Six skills and a SessionStart drill banner.
+        note: My interview preparation plugin. Grades the plan you say out loud before you code, records real interviews as state, schedules what broke. Six skills and a SessionStart drill banner.
       - repo: ong6/groundplane
         note: My deterministic-boundary library for agent output. Not a skill, but the reference for what an agent may generate versus what code must produce.
       - repo: ong6/skillsmith

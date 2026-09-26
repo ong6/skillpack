@@ -1,5 +1,5 @@
 ---
-name: handoff
+name: write-handoff
 description: Compact the current conversation into a handoff document. Use when the user asks for a handoff, continuation brief, or context package for another session or agent.
 ---
 

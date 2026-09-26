@@ -1,15 +1,15 @@
 ---
-name: refine
+name: improve-work
 description: >-
   Explicit-only. Improve the latest deliverable (draft, code, plan, note, design)
   through fresh independent reviewer agents until it meets the requested score
-  and all explicit constraints, or three refinement rounds pass. Use for "/refine",
+  and all explicit constraints, or three refinement rounds pass. Use for "/improve-work",
   "refine this", "run the refine loop", "auto-improve this". Not for a single quick
   edit, a PR or diff review (code-review), or feedback about agent behaviour
-  (feedback-loop).
+  (apply-feedback).
 ---
 
-# Refine
+# Improve Work
 
 Improve the current deliverable with a reviewer that did not write it. The main agent refines;
 fresh reviewer agents score. Never score your own work and call it independent.
@@ -21,7 +21,7 @@ fresh reviewer agents score. Never score your own work and call it independent.
    and say so in one line.
 2. **Brief.** Write a short brief for reviewers: the owner's goal, audience, and every explicit
    constraint they gave (length, tone, must-keep items). Constraints outrank reviewer taste.
-3. **Threshold.** Default 8 out of 10. A number in the argument (`/refine 9`) replaces it.
+3. **Threshold.** Default 8 out of 10. A number in the argument (`/improve-work 9`) replaces it.
    Cap: 3 refinements after the initial review; each changed artifact must then be reviewed.
 4. **Snapshots.** Preserve the initial artifact and every reviewed version. Bind each review's
    rubric, score, constraint checks, critical issues and fixes to that exact version. Restoring

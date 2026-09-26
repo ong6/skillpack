@@ -1,9 +1,9 @@
 ---
-name: feedback-loop
+name: apply-feedback
 description: Capture the owner's feedback about how the agent, a skill, a hook, a rule, or a reply behaved, log it in feedback.md, and patch whatever it targets in the same session so the behaviour changes by default. Fires on "don't do X", "stop doing", "why does it", "next time", "I prefer", "that was wrong", "that's annoying", "can I turn this off", "always" or "never" about agent behaviour, or a correction to a reply; not for feedback on the owner's own writing, on other people, or a one-off instruction for the current task.
 ---
 
-# Feedback loop
+# Apply Feedback
 
 Feedback is a change request. Log it, then change the thing it is about, in this session. The
 owner never repeats feedback and never maintains the log.
@@ -50,7 +50,7 @@ locked file). Say so in the reply and leave the entry pending until it is done.
 # Feedback log
 
 What the owner said about how the agent, a skill, a hook, or a reply behaved, and what changed
-because of it. Append-only; the `feedback-loop` skill writes here.
+because of it. Append-only; the `apply-feedback` skill writes here.
 ```
 
 Add the repo's usual frontmatter above the heading if its notes require one.
