@@ -74,6 +74,20 @@ class NamingTests(unittest.TestCase):
         metadata.write_text('interface:\n  default_prompt: "Use $write-email for this message."\n')
         self.assertEqual(([], 1), names.check_directory(self.root, self.policy))
 
+    def test_legacy_commands_paths_and_cross_skill_references_fail(self):
+        mapping = {"write-an-email": "write-email", "cv": "prepare-resume"}
+        folder = self.skill("write-email")
+        for stale in (
+            "Use /write-an-email for replies.",
+            "Read .claude/skills/write-an-email/SKILL.md.",
+            "Not for resumes (cv).",
+        ):
+            (folder / "SKILL.md").write_text(
+                f"---\nname: write-email\ndescription: {stale}\n---\n# Email\n"
+            )
+            errors, _ = names.check_directory(self.root, self.policy, mapping)
+            self.assertTrue(any("legacy skill reference" in error for error in errors), stale)
+
 
 if __name__ == "__main__":
     unittest.main()

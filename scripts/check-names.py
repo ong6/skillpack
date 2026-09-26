@@ -39,7 +39,34 @@ def validate_name(name, policy):
     return None
 
 
-def check_directory(directory, policy):
+def load_legacy_map(path):
+    if path is None or not path.is_file():
+        return {}
+    value = json.loads(path.read_text(encoding="utf-8"))
+    mapping = value.get("legacy_names") if isinstance(value, dict) else None
+    if not isinstance(mapping, dict) or any(
+        not isinstance(old, str) or not isinstance(new, str) for old, new in mapping.items()
+    ):
+        raise ValueError("legacy map must contain a legacy_names string mapping")
+    return mapping
+
+
+def legacy_references(text, mapping):
+    found = []
+    for old, new in mapping.items():
+        escaped = re.escape(old)
+        patterns = (
+            rf"(?<![a-z0-9-])[$/]{escaped}(?![a-z0-9-])",
+            rf"(?:\.claude/skills|\.agents/skills|\.claude/shared-skills/skills)/{escaped}(?:/|\b)",
+            rf"\.\./{escaped}/SKILL\.md",
+            rf"\((?:`)?{escaped}(?:`)?\)",
+        )
+        if any(re.search(pattern, text) for pattern in patterns):
+            found.append((old, new))
+    return found
+
+
+def check_directory(directory, policy, legacy=None):
     if not directory.is_dir():
         return [f"skill directory does not exist: {directory}"], 0
     errors, seen, count = [], {}, 0
@@ -71,6 +98,8 @@ def check_directory(directory, policy):
         if name in seen:
             errors.append(f"{folder.name}: duplicate skill identity also exposed at {seen[name]}")
         seen[name] = folder.name
+        for old, new in legacy_references(text, legacy or {}):
+            errors.append(f"{folder.name}: legacy skill reference {old!r}; use {new!r}")
         metadata = folder / "agents" / "openai.yaml"
         if metadata.is_file():
             prompts = re.findall(r"^\s*default_prompt:\s*(.*)$", metadata.read_text(encoding="utf-8"), re.M)
@@ -86,9 +115,12 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--skills-dir", type=Path, default=ROOT / "skills")
     parser.add_argument("--policy", type=Path, default=ROOT / "naming.json")
+    parser.add_argument("--legacy-map", type=Path)
     args = parser.parse_args()
     try:
-        errors, count = check_directory(args.skills_dir, load_policy(args.policy))
+        errors, count = check_directory(
+            args.skills_dir, load_policy(args.policy), load_legacy_map(args.legacy_map)
+        )
     except (OSError, ValueError, TypeError) as exc:
         print(f"naming check: {exc}", file=sys.stderr)
         return 1

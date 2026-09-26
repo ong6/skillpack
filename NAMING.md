@@ -19,6 +19,7 @@ prove that a name is understandable or that a skill improves behavior.
 ```sh
 python3 scripts/check-names.py
 python3 scripts/check-names.py --skills-dir /path/to/repo/.claude/skills
+python3 scripts/check-names.py --skills-dir /path/to/repo/.claude/skills --legacy-map /path/to/repo/.agents/skill-name-map.json
 python3 scripts/test-names.py
 ```
 
