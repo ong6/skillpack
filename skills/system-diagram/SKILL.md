@@ -1,5 +1,5 @@
 ---
-name: draw-system-diagram
+name: system-diagram
 description: >-
   Draw a polished system or architecture diagram as hand-authored inline SVG: request flows, RAG
   and agent pipelines, ingest queues, service maps, before/after comparisons. Use for "system
@@ -8,7 +8,7 @@ description: >-
   mockups (design), or a one-hop relationship that a sentence explains faster.
 ---
 
-# Draw System Diagram
+# System diagram
 
 Hand-drawn SVG, showcase quality. The bar is a figure you would put in a conference talk: a cold
 reader sees the mechanism in ten seconds, and nothing on the canvas is there for decoration.

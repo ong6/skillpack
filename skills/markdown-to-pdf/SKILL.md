@@ -1,9 +1,9 @@
 ---
-name: export-markdown-pdf
+name: markdown-to-pdf
 description: Convert a markdown note into a verified, print-ready A4 PDF. Use for printable notes, meeting handouts, or rebuilding generated PDFs; not for editing existing PDFs or building a LaTeX document.
 ---
 
-# Export Markdown PDF
+# Markdown → printable PDF
 
 Pipeline: strip frontmatter → pandoc → HTML + print CSS → headless Chrome → verify.
 

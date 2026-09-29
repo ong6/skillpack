@@ -1,17 +1,17 @@
 ---
-name: build-blender-scene
+name: blender-authoring
 description: >-
   Create, edit, animate, export and render Blender scenes using headless Python (bpy).
-  Use after design-3d selects Blender, or when the user explicitly requests Blender or a blend
+  Use after 3d-design selects Blender, or when the user explicitly requests Blender or a blend
   file. Covers geometry, materials, rigging, animation, lighting and export. Not for choosing
   between 3D tools, Three.js playback or ordinary page layout.
 
 ---
 
-# Build Blender Scene
+# Blender scripting (bpy)
 
-For tool selection and web integration, use [design-3d](../design-3d/SKILL.md).
-For loops and exported playback, follow its [animation review](../design-3d/animation.md).
+For tool selection and web integration, use [3d-design](../3d-design/SKILL.md).
+For loops and exported playback, follow its [animation review](../3d-design/animation.md).
 
 Blender is driven from Python through the `bpy` module. The reliable way to produce
 3D/2D assets, materials, lighting, and animation from a prompt is to **write a
