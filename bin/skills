@@ -792,6 +792,11 @@ def sync_checkouts(ctx, relink=True):
             touch(stamp("fetched"))
         for e in errors:
             say("skills sync: " + e, sys.stderr)
+        if not errors:  # a clean run clears an older failure so doctor doesn't keep reporting it
+            try:
+                open(stamp("sync.log"), "w").close()
+            except OSError:
+                pass
         if changed and relink:
             do_link(ctx)
             register_mcp(ctx)
