@@ -61,7 +61,7 @@ The user is in a car/at a stop and needs an answer NOW. Optimize for phone-reada
 - Every timed claim (hours, closing, charge amounts) verified online this session, or
   explicitly marked as "check the sign / call ahead".
 - Every stop names its parking. Every dinner names a booking action.
-- State the arrival-time consequence of every option ("lands you in Burford ~23:10").
+- State the arrival-time consequence of every option ("lands you at the next stop ~23:10").
 - Groups >6: restaurants must be called ahead; note which cuisines absorb big tables late
   (Indian/Italian > village gastropub).
 - Data gaps are listed honestly. Never invent a price, an opening hour, or a distance.

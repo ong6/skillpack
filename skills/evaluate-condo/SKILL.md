@@ -5,8 +5,8 @@ description: Evaluate a Singapore condo listing or development and file a cited 
 
 # Evaluate Condo
 
-The full candidate-evaluation loop. Rule: condo purchase research **always** includes the
-Property Finder flow, never web research alone.
+The full candidate-evaluation loop. Rule: condo research always pairs live listing data with a
+structured valuation pass, never web research alone.
 
 ## 1 · Buyer context first
 
@@ -45,18 +45,13 @@ volume, no bulk enumeration.
 completed comp, competing supply pipeline at the exit window, TOP date (listing vs marketing
 vs news often disagree; pin it down, it moves the carry math by years).
 
-## 3 · Run Property Finder (mandatory)
+## 3 · Run a valuation pass
 
-Resolve the sibling `property-finder` repository from the parent of the host repo's Git root
-(`git rev-parse --show-toplevel` from the working directory); do not assume a fixed home-directory
-path. Run an isolated subagent pass there (the host's own subagent mechanism, not another AI CLI),
-loading that repository's agent instructions and skills:
-use `analyze-listing` for a specific unit and `analyze-development` for a project. If the
-repository or subagents are unavailable, report that gap and run the same flow in the main session
-where possible.
-Pass into the prompt: verified listing facts, realsmart data, buyer context, purpose, and
-the standing alternatives to beat (current candidates in the home-buying notes). The flow
-must end with `--from-review` so the evaluation saves to that repo's memory.
+If the host repo's manual names a property-analysis tool or repository, run it in an isolated
+subagent (the host's own subagent mechanism, not another AI CLI) with the verified listing facts,
+the realsmart data, the buyer context, the purpose and the standing alternatives to beat. Save its
+result wherever that tool keeps its memory. Otherwise score the unit in this session against the
+rules in §4, and say that no structured valuation tool was available.
 
 ## 4 · Analysis rules (lessons already paid for)
 

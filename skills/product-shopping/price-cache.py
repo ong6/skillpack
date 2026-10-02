@@ -23,7 +23,7 @@ Usage:
 
 The cache is the host repo's data, never part of the skill. Path, first match wins:
   --cache PATH, then the PRICE_CACHE env var, then
-  <host repo root>/resources/shopping/price-cache.json, where the root is $PDS_ROOT or
+  <host repo root>/resources/shopping/price-cache.json, where the root is $HOST_REPO or
   `git rev-parse --show-toplevel` run from the current directory.
 """
 import argparse, json, os, subprocess, sys
@@ -34,8 +34,8 @@ DEFAULT_REL = os.path.join("resources", "shopping", "price-cache.json")
 
 
 def host_root():
-    """The host repo: $PDS_ROOT, else the Git toplevel of the current directory, else None."""
-    env = os.environ.get("PDS_ROOT")
+    """The host repo: $HOST_REPO, else the Git toplevel of the current directory, else None."""
+    env = os.environ.get("HOST_REPO")
     if env:
         return os.path.abspath(os.path.expanduser(env))
     try:
@@ -55,7 +55,7 @@ def default_cache():
     # Never write personal prices into the skills checkout that ships this script.
     if os.path.realpath(__file__).startswith(os.path.realpath(root) + os.sep):
         sys.exit("price-cache: the working directory is the skills checkout, not the host repo; "
-                 "run from the host repo or set PDS_ROOT or PRICE_CACHE")
+                 "run from the host repo or set HOST_REPO or PRICE_CACHE")
     return os.path.join(root, DEFAULT_REL)
 
 
@@ -247,7 +247,7 @@ def main():
     p = argparse.ArgumentParser(description="tiny local price cache (read/write, no scraping)")
     p.add_argument("--cache", default=None,
                    help="cache file (default: $PRICE_CACHE, else resources/shopping/price-cache.json "
-                        "under $PDS_ROOT or the current Git repo)")
+                        "under $HOST_REPO or the current Git repo)")
     sub = p.add_subparsers(dest="cmd", required=True)
 
     s = sub.add_parser("import")
@@ -280,7 +280,7 @@ def main():
     if args.cache is None:
         args.cache = default_cache()
     if not args.cache:
-        p.error("no cache path: run inside the host repo, or set PDS_ROOT or PRICE_CACHE, or pass --cache")
+        p.error("no cache path: run inside the host repo, or set HOST_REPO or PRICE_CACHE, or pass --cache")
     args.fn(args)
 
 

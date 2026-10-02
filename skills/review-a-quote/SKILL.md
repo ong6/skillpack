@@ -49,15 +49,15 @@ plainly and stop suggesting tenders.
   recessed edge pull is a different object. (This mistake once produced a wrong four-figure saving
   claim.)
 - Check finishes/materials **against the adjacent packages** already decided (sanitary, lighting,
-  joinery). Cross-package clashes (nickel handle in a bronze room) are findings the vendor
+  joinery). Cross-package clashes (a chrome fitting in a brass room) are findings the vendor
   can't see and the owner will.
 - Every number in the write-up traces to the extracted text. Cells you can't trace get `TODO`,
   not a guess.
 
 ## Step 4 — Record decisions, not analysis
 
-When the owner rules ("the utility rooms can take a cheaper lever", "keep the theme in the
-baths"), write the decision into the note **verbatim as a quote block with a date**, then the derived table
+When the owner rules ("the back rooms can take a cheaper lever", "keep the main finish in the
+bathrooms"), write the decision into the note **verbatim as a quote block with a date**, then the derived table
 (item, change, ± amount). Owner decisions are append-only history; never silently revise one.
 
 ## Step 5 — Split the output

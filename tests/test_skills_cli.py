@@ -98,7 +98,7 @@ class Sandbox(unittest.TestCase):
         for d in (self.home, self.root, self.store, self.fakebin):
             os.makedirs(d, exist_ok=True)
         env = dict(os.environ)
-        for key in ("CLAUDE_CONFIG_DIR", "SKILLS_ROOT", "PDS_ROOT", "SKILLS_PUBLIC_URL",
+        for key in ("CLAUDE_CONFIG_DIR", "SKILLS_ROOT", "HOST_REPO", "SKILLS_PUBLIC_URL",
                     "SKILLS_PRIVATE_URL", "SKILLS_FETCH_INTERVAL", "GIT_DIR", "GIT_WORK_TREE"):
             env.pop(key, None)
         env.update({

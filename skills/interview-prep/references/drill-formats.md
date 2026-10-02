@@ -25,7 +25,7 @@ measure that?", "what pushback did you get?", "what broke?".
 
 ## Number defense
 
-Pick a stat off the resume ("where does +108% come from?"). Unprompted, they should produce:
+Pick a stat off the resume ("where does +35% come from?"). Unprompted, they should produce:
 **metric definition** → **baseline** → **intervention** → **measurement window and method** (A/B
 test, dashboard, finance report) → **caveats** (seasonality, attribution). Check each step against
 the number-source document and review records. Missing two or more steps: log it. Cannot name the

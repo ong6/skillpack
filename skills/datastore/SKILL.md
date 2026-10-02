@@ -51,7 +51,7 @@ else the host repo's skill link folder; never climb or resolve a script's own pa
 import os, subprocess, sys
 from pathlib import Path
 home = os.environ.get("SKILLS_HOME")
-root = os.environ.get("PDS_ROOT") or subprocess.run(["git", "rev-parse", "--show-toplevel"],
+root = os.environ.get("HOST_REPO") or subprocess.run(["git", "rev-parse", "--show-toplevel"],
     stdout=subprocess.PIPE, universal_newlines=True, check=True).stdout.strip()
 scripts = (Path(home) / "skills" if home else Path(root) / ".claude" / "skills") / "datastore" / "scripts"
 sys.path.insert(0, str(scripts))

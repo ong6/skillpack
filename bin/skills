@@ -19,7 +19,7 @@ Stdlib only, Python 3.7+. This tool never starts a model session: the only AI CL
 
 Environment: SKILLS_FACTS (JSON merged into the detected host facts, to simulate another
 machine), SKILLS_NO_FETCH=1, SKILLS_FETCH_INTERVAL (seconds, default 300), SKILLS_ROOT
-(guard), SKILLS_PUBLIC_URL, SKILLS_PRIVATE_URL, PDS_ROOT (store; lint fallback).
+(guard), SKILLS_PUBLIC_URL, SKILLS_PRIVATE_URL, HOST_REPO (lint fallback).
 """
 from __future__ import annotations
 
@@ -221,7 +221,7 @@ def host_facts():
 
 
 def rule_matches(rule, facts):
-    """Same semantics as the store's startup summary: every field equal, hostname by prefix."""
+    """Every field equal, hostname by prefix."""
     for key, want in rule.items():
         if key == "hostname":
             if not str(facts.get("hostname", "")).startswith(str(want)):
@@ -1061,8 +1061,8 @@ PHONE_PATTERNS = (
     re.compile(r"(?<![\w+./:-])[689]\d{3}[ -]?\d{4}(?![\w/:-])"),
     re.compile(r"(?<![\w+./:-])(?:\(\d{3}\) ?|\d{3}[.-])\d{3}[.-]\d{4}(?![\w/-])"),
 )
-# Shelling out to a personal AI CLI from a skill lets a company-model session hand work to a
-# personal agent. Host-native subagents are fine; lines that only forbid a launch are fine.
+# Shelling out to another AI CLI from a skill starts a session outside the host's control (wrong
+# config, model or account). Host-native subagents are fine; lines that only forbid a launch are fine.
 AI_CLI_LAUNCH = (
     ("codex", re.compile(r"\bcodex\b.{0,40}\bexec\b", re.I)),
     ("claude", re.compile(r"\bclaude\b.{0,40}(?:-p|--print)\b", re.I)),
@@ -1337,7 +1337,7 @@ def is_private_checkout(checkout):
 def find_linter(checkout):
     rel = os.path.join("skills", "skillsmith", "scripts", "lint_skill.py")
     candidates = [os.path.join(checkout, rel), os.path.join(os.path.dirname(checkout), PUBLIC, rel)]
-    store = os.environ.get("PDS_ROOT")
+    store = os.environ.get("HOST_REPO")
     if not store:
         r = run(["git", "rev-parse", "--show-toplevel"], timeout=5)
         store = r.stdout.strip() if r is not None and r.returncode == 0 else None
@@ -1439,7 +1439,7 @@ def cmd_publish(args):
 def add_profile_args(p):
     p.add_argument("--repo", action="append", metavar="R",
                    help="repo to link into (repeatable; profile repos are added)")
-    p.add_argument("--machines", metavar="M", help="machines registry JSON (e.g. life/tech/machines.json)")
+    p.add_argument("--machines", metavar="M", help="machines registry JSON (e.g. machines.json)")
 
 
 def build_parser():

@@ -68,6 +68,7 @@ Add the repo's usual frontmatter above the heading if its notes require one.
 ## Where edits land
 
 This skill ships in the public [`ong6/skills`](https://github.com/ong6/skills) collection and is
-linked into each host repo, so an edit made through the link changes the shared checkout. Commit
-and push that checkout the way its README says, after the guard and linter pass. Edit in place;
-never keep a second copy.
+linked into each host repo, so an edit made through the link changes the shared checkout. Tell
+the owner which checkout changed, then commit and publish it only the way the host repo's manual
+says (after the guard and linter pass); if it says nothing, leave the commit to the owner. Edit in
+place; never keep a second copy.

@@ -42,7 +42,7 @@ class WorkflowContractTests(unittest.TestCase):
     def test_spawns_host_native_agents_and_forbids_ai_clis(self):
         self.assertIn("Spawn runners and judges with the current host's native subagent mechanism", self.skill_flat)
         self.assertIn("Never shell out to an AI CLI", self.skill_flat)
-        self.assertIn("coordinator's model side (company or personal)", self.skill_flat)
+        self.assertIn("same model provider as the coordinator", self.skill_flat)
         self.assertNotIn("at most four evaluation agents", self.skill_flat)
         self.assertIn("helper rejects missing, reused, non-native, or recursive-CLI provenance", self.skill_flat)
 

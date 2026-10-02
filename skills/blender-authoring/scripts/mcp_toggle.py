@@ -16,7 +16,7 @@ import subprocess
 import sys
 
 NAME = "blender"
-SERVER = ["uvx", "--from", "git+https://projects.blender.org/lab/blender_mcp.git#subdirectory=mcp",
+SERVER = ["uvx", "--from", "git+https://projects.blender.org/lab/blender_mcp.git@dbbf836ad4b1025f14a2b3b504c43903f39e0b04#subdirectory=mcp",
           "blender-mcp"]
 
 

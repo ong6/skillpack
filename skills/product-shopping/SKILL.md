@@ -74,7 +74,7 @@ Model number, variant, size/colour where price differs, region and currency. Ask
 `price-cache.py`, in this skill's base directory (run it; `--help` lists commands), holds prices
 already gathered, dated, with currency, url and condition. The cache is the host repo's data, not
 the skill's: it defaults to `resources/shopping/price-cache.json` under the host repo root
-(`$PDS_ROOT`, else the Git toplevel of the working directory); `--cache` or `PRICE_CACHE`
+(`$HOST_REPO`, else the Git toplevel of the working directory); `--cache` or `PRICE_CACHE`
 overrides it. Below, `PC` is `python3 <skill dir>/price-cache.py`.
 - `$PC cheapest "<model>" [--currency <CUR>] --available` gives an instant answer if we've seen it, and warns when results span currencies.
 - `$PC stale --days 30` lists what to re-fetch. Re-fetch only stale/missing items; trust the rest.

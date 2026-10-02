@@ -59,7 +59,7 @@ in [references/research.md](references/research.md).
   runner and judge is its direct child, and they can run in parallel. Never shell out to an AI CLI
   (`codex exec`, `claude -p`) from a script, hook, or runner: that session starts outside this
   harness, can load the wrong configuration or model, and breaks the isolation receipts. In Codex,
-  keep every runner and judge on the coordinator's model side (company or personal). A runner may
+  keep every runner and judge on the same model provider as the coordinator. A runner may
   use subagents when the skill under test calls for them. A host-native worker is admissible even
   when the host UI labels it Codex; a CLI process started by skill code is not.
 - Record structured native provenance for every runner and judge. Version 3 inputs must declare the
