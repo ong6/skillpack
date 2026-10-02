@@ -3,8 +3,10 @@
 Bug fixes and small, reusable improvements are welcome. Open an issue before adding a new skill so
 the trigger boundary, portability and overlap with existing skills can be agreed first.
 
-Each skill lives in `skills/<name>/SKILL.md`. Add it to exactly one category in `catalog.yaml` and
-give it a one-line entry under `skill_summaries`, then run:
+Each skill lives in `skills/<name>/SKILL.md` (or `rarely-used/<name>/SKILL.md` once it has been idle
+for a month; `bin/skills tidy` moves it). Add it to exactly one category in `catalog.yaml` and give
+it a one-line entry under `skill_summaries`. Skills found elsewhere go under a category's `links`
+(`repo` or `url`, a `note`, and optionally `name`, `by`, `tags`, `from` and `from_url`). Then run:
 
 ```sh
 python3 scripts/build-catalog.py          # regenerate the README tables

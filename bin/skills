@@ -1,12 +1,17 @@
 #!/usr/bin/env python3
-"""Link, sync, guard and publish the public and private agent-skill checkouts.
+"""Link, sync, guard, publish, tidy and search the public and private agent-skill checkouts.
 
-  skills up      --repo R --machines M [--hook claude|codex] [--wait]
-  skills link    --repo R --machines M
-  skills unlink  --repo R --machines M
-  skills doctor  --repo R --machines M [--json]
-  skills guard   [PATH ...] [--root DIR] [--terms FILE]
-  skills publish --checkout C -m MESSAGE
+  skills up       --repo R --machines M [--hook claude|codex] [--wait]
+  skills link     --repo R --machines M
+  skills unlink   --repo R --machines M
+  skills doctor   --repo R --machines M [--json]
+  skills autosync --repo R --machines M
+  skills publish  --checkout C -m MESSAGE
+  skills guard    [PATH ...] [--root DIR] [--terms FILE]
+  skills find     [QUERY ...] [--json] [--limit N]
+  skills usage    --repo R --machines M [--scan] [--json]
+  skills tidy     --repo R --machines M [--dry-run]
+  skills shelve | restore NAME ... [--repo R --machines M]
 
 The profile comes from the machines registry (--machines): the first machine whose `match`
 fields all equal this host's facts (os, model, hostname prefix, wsl, user) supplies its
@@ -14,19 +19,30 @@ fields all equal this host's facts (os, model, hostname prefix, wsl, user) suppl
 Checkouts live at <root>/skills and <root>/skills-private; links point at
 <checkout>/skills/<name>. Only symlinks into those two checkouts are ever changed.
 
+Each checkout has two tiers. `skills/<name>` is the core set that gets linked.
+`rarely-used/<name>` holds skills nobody has used for 30 days: never linked, still found by
+`find` and readable in place. Once a day the background sync records which skills this machine's
+Claude Code and Codex sessions used (`usage/<machine>.json` in the private checkout). It then
+moves idle core skills to the shelf and shelved skills that were used again back to core, and
+pushes the result. Pinned skills (catalog `pinned:`) and skills a core skill names stay in core.
+
 Stdlib only, Python 3.7+. This tool never starts a model session: the only AI CLI it runs is
 `claude mcp get|add`, to register MCP servers.
 
 Environment: SKILLS_FACTS (JSON merged into the detected host facts, to simulate another
-machine), SKILLS_NO_FETCH=1, SKILLS_FETCH_INTERVAL (seconds, default 300), SKILLS_ROOT
-(guard), SKILLS_PUBLIC_URL, SKILLS_PRIVATE_URL, HOST_REPO (lint fallback).
+machine), SKILLS_NO_FETCH=1, SKILLS_FETCH_INTERVAL (seconds, default 300),
+SKILLS_MAINTAIN_INTERVAL (seconds between usage scans and tidies, default 86400), SKILLS_TODAY
+(YYYY-MM-DD, tests), SKILLS_ROOT (guard), SKILLS_PUBLIC_URL, SKILLS_PRIVATE_URL, HOST_REPO
+(lint fallback), CLAUDE_CONFIG_DIR and CODEX_HOME (where transcripts live).
 """
 from __future__ import annotations
 
 import argparse
 import ast
 import contextlib
+import datetime
 import fnmatch
+import glob
 import getpass
 import hashlib
 import json
@@ -48,7 +64,14 @@ DEFAULT_ROOT = "~/Sideproject"  # public-guard: allow
 PUBLIC_URL = "https://github.com/ong6/skills.git"
 PRIVATE_URLS = ("https://github.com/ong6/skills-private.git", "git@github.com:ong6/skills-private.git")
 LINK_SUBDIRS = (".claude/skills", ".agents/skills")
+CORE = "skills"
+SHELF = "rarely-used"
+TIERS = (CORE, SHELF)
 FETCH_INTERVAL = 300
+MAINTAIN_INTERVAL = 86400
+IDLE_DAYS = 30
+USAGE_DAYS = 90
+USAGE_DIR = "usage"
 EXCLUDE_START = "# >>> skills links (managed by bin/skills)"
 EXCLUDE_END = "# <<< skills links"
 UNMATCHED = "unregistered machine"
@@ -104,6 +127,31 @@ def ago(when):
         if s >= size:
             return "{}{} ago".format(s // size, unit)
     return "just now"
+
+
+def today():
+    raw = os.environ.get("SKILLS_TODAY")
+    if raw:
+        try:
+            return datetime.datetime.strptime(raw, "%Y-%m-%d").date()
+        except ValueError:
+            pass
+    return datetime.date.today()
+
+
+def days_before(day, n):
+    return (day - datetime.timedelta(days=n)).isoformat()
+
+
+def interval(name, default):
+    try:
+        return float(os.environ.get(name, default))
+    except ValueError:
+        return default
+
+
+def slug(text):
+    return re.sub(r"[^a-z0-9]+", "-", str(text).lower()).strip("-") or "machine"
 
 
 def quiet_env():
@@ -314,84 +362,160 @@ class Context(object):
 
 # --------------------------------------------------------------------------------------- catalog
 
-def unquote(value):
-    value = value.strip()
-    if len(value) >= 2 and value[0] == value[-1] and value[0] in "'\"":
-        return value[1:-1]
+def strip_comment(text):
+    """Drop a trailing ` # comment` that sits outside quotes."""
+    quote = None
+    i = 0
+    while i < len(text):
+        ch = text[i]
+        if quote:
+            if ch == "\\" and quote == '"':
+                i += 1
+            elif ch == quote:
+                quote = None
+        elif ch in "'\"" and (i == 0 or text[i - 1] in " \t[,:-"):
+            quote = ch
+        elif ch == "#" and (i == 0 or text[i - 1] in " \t"):
+            return text[:i].rstrip()
+        i += 1
+    return text.rstrip()
+
+
+def split_flow(inner):
+    parts, quote, start = [], None, 0
+    for i, ch in enumerate(inner):
+        if quote:
+            if ch == quote:
+                quote = None
+        elif ch in "'\"":
+            quote = ch
+        elif ch == ",":
+            parts.append(inner[start:i])
+            start = i + 1
+    parts.append(inner[start:])
+    return [p for p in parts if p.strip()]
+
+
+def scalar(value):
+    v = value.strip()
+    if v.startswith("[") and v.endswith("]"):
+        return [scalar(x) for x in split_flow(v[1:-1])]
+    if v == "{}":
+        return {}
+    if len(v) >= 2 and v[0] == v[-1] == '"':
+        try:
+            return json.loads(v)
+        except ValueError:
+            return v[1:-1]
+    if len(v) >= 2 and v[0] == v[-1] == "'":
+        return v[1:-1].replace("''", "'")
+    if v in ("true", "false"):
+        return v == "true"
+    return v
+
+
+YAML_KEY = re.compile(r"^([^\s:'\"\[\]{}#-][^:]*?|-[^\s:][^:]*?)\s*:(?:\s+(.*))?$")
+
+
+def yaml_item(text):
+    return text == "-" or text.startswith("- ")
+
+
+def yaml_block(lines, i, indent):
+    if yaml_item(lines[i][1]):
+        return yaml_seq(lines, i, indent)
+    return yaml_map(lines, i, indent)
+
+
+def yaml_seq(lines, i, indent):
+    out = []
+    while i < len(lines) and lines[i][0] == indent and yaml_item(lines[i][1]):
+        rest = lines[i][1][1:]
+        item = rest.lstrip()
+        if not item:
+            i += 1
+            if i < len(lines) and lines[i][0] > indent:
+                value, i = yaml_block(lines, i, lines[i][0])
+                out.append(value)
+            else:
+                out.append(None)
+        elif YAML_KEY.match(item) and item[0] not in "'\"[":
+            child = indent + 1 + len(rest) - len(item)
+            lines[i] = (child, item)
+            value, i = yaml_map(lines, i, child)
+            out.append(value)
+        else:
+            out.append(scalar(item))
+            i += 1
+    return out, i
+
+
+def yaml_map(lines, i, indent):
+    out = {}
+    while i < len(lines) and lines[i][0] == indent and not yaml_item(lines[i][1]):
+        m = YAML_KEY.match(lines[i][1])
+        if not m:
+            raise ValueError("line {!r} is not `key: value`".format(lines[i][1]))
+        key, rest = m.group(1).strip(), (m.group(2) or "").strip()
+        i += 1
+        if rest:
+            out[key] = scalar(rest)
+        elif i < len(lines) and (lines[i][0] > indent or (lines[i][0] == indent and yaml_item(lines[i][1]))):
+            out[key], i = yaml_block(lines, i, lines[i][0])
+        else:
+            out[key] = None
+    return out, i
+
+
+def load_yaml(text):
+    """The YAML subset catalog.yaml uses: block mappings and lists, flow lists of scalars, quoted
+    or plain scalars, comments. No PyYAML needed. Raises ValueError on anything else."""
+    lines = []
+    for raw in text.splitlines():
+        if not raw.strip() or raw.lstrip().startswith("#"):
+            continue
+        if "\t" in raw[:len(raw) - len(raw.lstrip())]:
+            raise ValueError("tab indentation")
+        body = strip_comment(raw.strip())
+        if body:
+            lines.append((len(raw) - len(raw.lstrip(" ")), body))
+    if not lines:
+        return {}
+    value, i = yaml_block(lines, 0, lines[0][0])
+    if i != len(lines):
+        raise ValueError("unexpected indentation at {!r}".format(lines[i][1]))
     return value
 
 
-def parse_catalog(path):
-    """{category key: set(skill names)} from the YAML subset catalog.yaml uses.
-
-    Handles `categories:` as a block list of mappings whose `skills` is either a flow list
-    (`skills: [a, b]`) or a block list (`skills:` then `- a` lines). No PyYAML needed.
-    """
+def read_catalog(checkout):
+    """catalog.yaml as a dict ({} when missing or unreadable)."""
     try:
-        with open(path, encoding="utf-8") as fh:
-            lines = fh.read().splitlines()
-    except (OSError, UnicodeError):
+        with open(os.path.join(checkout, "catalog.yaml"), encoding="utf-8") as fh:
+            data = load_yaml(fh.read())
+        return data if isinstance(data, dict) else {}
+    except (OSError, UnicodeError, ValueError):
         return {}
+
+
+def catalog_categories(catalog):
+    """{category key: set(skill names)}."""
     cats = {}
-    entries = []
-    in_section = False
-    entry = None
-    entry_indent = None
-    list_indent = None
-    for raw in lines:
-        if not raw.strip() or raw.lstrip().startswith("#"):
-            continue
-        indent = len(raw) - len(raw.lstrip(" "))
-        text = raw.strip()
-        if indent == 0 and not text.startswith("-"):
-            in_section = re.match(r"categories\s*:\s*$", text) is not None
-            entry, entry_indent, list_indent = None, None, None
-            continue
-        if not in_section:
-            continue
-        if text.startswith("- ") or text == "-":
-            if entry_indent is None:
-                entry_indent = indent
-            if indent == entry_indent:
-                entry = {"key": None, "skills": []}
-                entries.append(entry)
-                list_indent = None
-                text = text[1:].strip()
-                indent = indent + 2
-                if not text:
-                    continue
-            elif list_indent is not None and indent >= list_indent and entry is not None:
-                item = text[1:].strip()
-                if ":" not in item and item:
-                    entry["skills"].append(unquote(item.split(" #")[0]))
-                continue
-            else:
-                continue
-        if entry is None:
-            continue
-        m = re.match(r"([A-Za-z0-9_-]+)\s*:\s*(.*)$", text)
-        if not m:
-            continue
-        key, value = m.group(1), m.group(2).split(" #")[0].strip()
-        list_indent = None
-        if key == "key":
-            entry["key"] = unquote(value)
-        elif key == "skills":
-            if value.startswith("["):
-                inner = value.strip("[]")
-                entry["skills"].extend(unquote(v) for v in inner.split(",") if v.strip())
-            elif not value:
-                list_indent = indent
-    for e in entries:
-        if e["key"]:
-            cats.setdefault(e["key"], set()).update(s for s in e["skills"] if s)
+    for c in catalog.get("categories") or []:
+        if isinstance(c, dict) and isinstance(c.get("key"), str):
+            names = c.get("skills") if isinstance(c.get("skills"), list) else []
+            cats.setdefault(c["key"], set()).update(n for n in names if isinstance(n, str) and n)
     return cats
+
+
+def parse_catalog(path):
+    return catalog_categories(read_catalog(os.path.dirname(path)))
 
 
 # ------------------------------------------------------------------------------------------ plan
 
-def scan(checkout):
-    base = os.path.join(checkout, "skills")
+def scan(checkout, tier=CORE):
+    """{name: folder} for every skill folder (one holding a SKILL.md) in a checkout tier."""
+    base = os.path.join(checkout, tier)
     found = {}
     try:
         names = sorted(os.listdir(base))
@@ -734,24 +858,91 @@ def clone(url, dest, timeout=600):
     return True, None
 
 
-def fetch_ff(checkout):
-    """Fetch, then fast-forward the current branch only when the worktree is clean."""
+def last_line(r, fallback="?"):
+    if r is None:
+        return "timeout"
+    return ((r.stderr or r.stdout or "").strip().splitlines() or [fallback])[-1]
+
+
+def ahead_behind(checkout):
+    counts = git_out(checkout, "rev-list", "--left-right", "--count", "HEAD...@{u}")
+    try:
+        ahead, behind = counts.split()
+        return int(ahead), int(behind)
+    except (AttributeError, ValueError):
+        return 0, 0
+
+
+def push_checkout(checkout):
+    """Push local commits; the public checkout's are guarded first. (ok, error)"""
+    if not is_private_checkout(checkout):
+        hits, _, _, _ = run_guard(sorted(os.path.join(checkout, p) for p in changed_paths(checkout, True)
+                                         if os.path.isfile(os.path.join(checkout, p))),
+                                  root=os.path.dirname(checkout))
+        if hits:
+            return False, "unpushed commits fail the guard ({}); not pushed".format(
+                ", ".join(sorted(set("{}:{}".format(os.path.relpath(h[0], checkout), h[1]) for h in hits))[:3]))
+    r = git(checkout, "push", "--quiet", timeout=180)
+    if r is None or r.returncode != 0:
+        return False, "push failed: " + last_line(r)
+    return True, None
+
+
+def rebase_onto_upstream(checkout):
+    """Replay local commits on the fetched upstream; on conflict abort and say so."""
+    r = git(checkout, "rebase", "--quiet", "@{u}", timeout=120)
+    if r is not None and r.returncode == 0:
+        return None
+    conflicted = git_out(checkout, "diff", "--name-only", "--diff-filter=U") or ""
+    git(checkout, "rebase", "--abort")
+    files = ", ".join(conflicted.split()) or "unknown files"
+    return "diverged from origin and the rebase conflicts ({}); resolve by hand".format(files)
+
+
+TIDY_SUBJECT = re.compile(r"^(?:Shelve|Restore) .*\((?:unused \d+\+ days|used again)\)$")
+
+
+def only_tidy_commits(checkout):
+    subjects = git_out(checkout, "log", "--format=%s", "@{u}..HEAD")
+    return bool(subjects) and all(TIDY_SUBJECT.match(line) for line in subjects.splitlines())
+
+
+def sync_one(checkout):
+    """The pull flow: fetch; fast-forward, or rebase local commits, when the tree is clean; push
+    commits an auto-sync, tidy or usage scan left behind. A dirty tree is left for the Stop
+    hook's `autosync`, which commits first. (moved, error)"""
     with file_lock(checkout_lock_path(checkout), blocking=False) as got:
         if not got:
             return False, None
         r = git(checkout, "fetch", "--quiet", "--prune", "origin", timeout=120)
         if r is None or r.returncode != 0:
-            err = (r.stderr.strip().splitlines() or ["?"])[-1] if r is not None else "timeout"
-            return False, "fetch failed: " + err
+            return False, "fetch failed: " + last_line(r)
         if git_out(checkout, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}") is None:
             return False, None
         status = git_out(checkout, "status", "--porcelain")
         if status is None or status:
             return False, None
-        if git_out(checkout, "rev-list", "--count", "HEAD..@{u}") in (None, "0"):
-            return False, None
-        merged = git(checkout, "merge", "--ff-only", "--quiet", "@{u}")
-        return merged is not None and merged.returncode == 0, None
+        ahead, behind = ahead_behind(checkout)
+        moved = False
+        if behind:
+            if ahead:
+                err = rebase_onto_upstream(checkout)
+                if err and only_tidy_commits(checkout):
+                    # Two machines tidied at once. Drop ours; the next daily tidy recomputes.
+                    git(checkout, "reset", "--quiet", "--hard", "@{u}")
+                    return True, None
+                if err:
+                    return False, err
+            else:
+                merged = git(checkout, "merge", "--ff-only", "--quiet", "@{u}")
+                if merged is None or merged.returncode != 0:
+                    return False, "fast-forward failed: " + last_line(merged)
+            moved = True
+        if ahead_behind(checkout)[0]:
+            ok, err = push_checkout(checkout)
+            if not ok:
+                return moved, err
+        return moved, None
 
 
 def private_url():
@@ -764,24 +955,25 @@ def private_url():
     return None
 
 
-def sync_checkouts(ctx, relink=True):
-    """Clone missing checkouts, fetch and fast-forward clean ones. Network; run in background."""
+def sync_checkouts(ctx, relink=True, maintain=True):
+    """Clone missing checkouts, run the pull flow on the rest, and once a day record usage and
+    tidy. Network; run in background."""
     with file_lock(stamp("sync.lock"), blocking=False) as got:
         if not got:
             return False
         touch(stamp("attempted"))
         changed, errors = False, []
         if os.path.isdir(ctx.public):
-            moved, err = fetch_ff(ctx.public)
+            moved, err = sync_one(ctx.public)
         else:
             moved, err = clone(os.environ.get("SKILLS_PUBLIC_URL") or PUBLIC_URL, ctx.public)
         changed = changed or moved
-        public_ok = err is None
+        public_ok = err is None or not err.startswith(("fetch", "clone"))
         if err:
             errors.append("public: " + err)
         if ctx.use_private:
             if os.path.isdir(ctx.private):
-                moved, err = fetch_ff(ctx.private)
+                moved, err = sync_one(ctx.private)
             else:
                 url = private_url()
                 moved, err = clone(url, ctx.private) if url else (False, "no non-interactive access")
@@ -790,6 +982,15 @@ def sync_checkouts(ctx, relink=True):
                 errors.append("private: " + err)
         if public_ok:
             touch(stamp("fetched"))
+        if maintain and maintain_due():
+            touch(stamp("maintained"))
+            notes, committed = maintain_checkouts(ctx)
+            errors.extend(notes)
+            for checkout in committed:
+                changed = True
+                _, err = sync_one(checkout)
+                if err:
+                    errors.append("{}: {}".format("private" if checkout == ctx.private else "public", err))
         for e in errors:
             say("skills sync: " + e, sys.stderr)
         if not errors:  # a clean run clears an older failure so doctor doesn't keep reporting it
@@ -806,12 +1007,8 @@ def sync_checkouts(ctx, relink=True):
 def spawn_sync(ctx, args):
     if os.environ.get("SKILLS_NO_FETCH"):
         return
-    try:
-        interval = float(os.environ.get("SKILLS_FETCH_INTERVAL", FETCH_INTERVAL))
-    except ValueError:
-        interval = FETCH_INTERVAL
     last = mtime(stamp("attempted"))
-    if last is not None and time.time() - last < interval:
+    if last is not None and time.time() - last < interval("SKILLS_FETCH_INTERVAL", FETCH_INTERVAL):
         return
     touch(stamp("attempted"))
     cmd = [sys.executable, os.path.abspath(__file__), "_sync"]
@@ -826,6 +1023,475 @@ def spawn_sync(ctx, args):
                              cwd=home(), close_fds=True, start_new_session=True)
     except OSError:
         pass
+
+
+# ----------------------------------------------------------------------------------------- usage
+#
+# A use is a Skill tool call, a /slash command (Claude) or $mention (Codex) by the owner, or a tool
+# call that reads or runs a file inside the skill folder (Claude: a Read, or a Bash command running
+# its scripts/; Codex: any non-patch tool call naming SKILL.md, scripts/, references/ ...).
+# Edits and searches are not uses, and a session (with its subagents) that touches more than
+# MAINT_CAP skills' files is maintenance (audits, evals, lint passes), not use.
+
+NOT_USE_TOOLS = {"Edit", "Write", "MultiEdit", "NotebookEdit", "apply_patch", "Grep", "Glob"}
+SKILL_PATH = re.compile(r"(?=(?:skills|rarely-used)/([a-z0-9][a-z0-9-]*)/"
+                        r"(?:SKILL\.md|scripts/|references/|assets/|templates/|examples/))")
+SKILL_SCRIPT = re.compile(r"(?=(?:skills|rarely-used)/([a-z0-9][a-z0-9-]*)/scripts/)")
+COMMAND = re.compile(r"<command-name>/?([a-z0-9:-]+)</command-name>")
+DOLLAR = re.compile(r"(?<![\w$])\$([a-z][a-z0-9-]+)\b")
+EVAL_MARKERS = ("skill-evals", "skill-audit", ".evals")
+MAINT_CAP = 5
+
+
+def line_day(obj, fallback):
+    ts = obj.get("timestamp") if isinstance(obj, dict) else None
+    return ts[:10] if isinstance(ts, str) and len(ts) >= 10 else fallback
+
+
+def file_day(path):
+    when = mtime(path)
+    return datetime.date.fromtimestamp(when).isoformat() if when else today().isoformat()
+
+
+def note(found, name, day, known):
+    name = (name or "").split(":")[-1]
+    if name in known:
+        found[name] = max(found.get(name, ""), day)
+
+
+def scan_claude(path, known):
+    """(explicit {skill: day}, touched {skill: day}) from one Claude Code transcript."""
+    explicit, touched = {}, {}
+    fallback = file_day(path)
+    try:
+        fh = open(path, encoding="utf-8", errors="replace")
+    except OSError:
+        return explicit, touched
+    with fh:
+        for line in fh:
+            if "skills/" not in line and "rarely-used/" not in line and "command-name" not in line \
+                    and '"Skill"' not in line:
+                continue
+            try:
+                obj = json.loads(line)
+            except ValueError:
+                continue
+            if not isinstance(obj, dict):
+                continue
+            day = line_day(obj, fallback)
+            message = obj.get("message") if isinstance(obj.get("message"), dict) else {}
+            content = message.get("content")
+            if obj.get("type") == "user":
+                texts = [content] if isinstance(content, str) else [
+                    c.get("text", "") for c in content or [] if isinstance(c, dict) and c.get("type") == "text"]
+                for text in texts:
+                    for name in COMMAND.findall(text or ""):
+                        note(explicit, name, day, known)
+            elif obj.get("type") == "assistant" and isinstance(content, list):
+                for c in content:
+                    if not isinstance(c, dict) or c.get("type") != "tool_use":
+                        continue
+                    inp = c.get("input") if isinstance(c.get("input"), dict) else {}
+                    tool = c.get("name")
+                    if tool == "Skill":
+                        note(explicit, inp.get("skill"), day, known)
+                    elif tool == "Read" or tool == "Bash":
+                        # A Read of a skill file, or a command that runs a skill's script. Other
+                        # Bash text (heredocs, greps, test fixtures) only mentions skills.
+                        text = str(inp.get("file_path") or "") if tool == "Read" else str(inp.get("command") or "")
+                        pattern = SKILL_PATH if tool == "Read" else SKILL_SCRIPT
+                        for name in set(pattern.findall(text)):
+                            note(touched, name, day, known)
+    return explicit, touched
+
+
+def scan_codex(path, known):
+    """(explicit, touched) from one Codex rollout."""
+    explicit, touched = {}, {}
+    fallback = file_day(path)
+    try:
+        fh = open(path, encoding="utf-8", errors="replace")
+    except OSError:
+        return explicit, touched
+    with fh:
+        for line in fh:
+            if '"response_item"' not in line:
+                continue
+            try:
+                obj = json.loads(line)
+            except ValueError:
+                continue
+            p = obj.get("payload") if isinstance(obj, dict) and isinstance(obj.get("payload"), dict) else {}
+            day = line_day(obj, fallback)
+            if p.get("type") == "message" and p.get("role") == "user":
+                for c in p.get("content") or []:
+                    text = c.get("text", "") if isinstance(c, dict) else ""
+                    if text.startswith("# AGENTS.md") or "<environment_context>" in text:
+                        continue
+                    for name in DOLLAR.findall(text):
+                        note(explicit, name, day, known)
+            elif p.get("type") in ("function_call", "custom_tool_call") and p.get("name") not in NOT_USE_TOOLS:
+                blob = json.dumps(p.get("arguments") or p.get("input") or "")
+                for name in set(SKILL_PATH.findall(blob)):
+                    note(touched, name, day, known)
+    return explicit, touched
+
+
+def under(path, roots):
+    path = os.path.realpath(path)
+    return any((path + os.sep).startswith(os.path.realpath(r).rstrip(os.sep) + os.sep) for r in roots)
+
+
+def claude_transcripts(ctx, since):
+    """Groups of transcript files, one per session (its main file plus its subagents' files),
+    for sessions where any file changed since `since`."""
+    base = os.path.join(os.environ.get("CLAUDE_CONFIG_DIR") or os.path.join(home(), ".claude"), "projects")
+    prefixes = []
+    for repo in ctx.repos:
+        for form in set((repo, os.path.realpath(repo))):
+            prefixes.append(re.sub(r"[^A-Za-z0-9]", "-", form))
+    try:
+        dirs = sorted(os.listdir(base))
+    except OSError:
+        return
+    for d in dirs:
+        if any(m in d for m in EVAL_MARKERS):
+            continue
+        if ctx.scope == "project" and not any(d == p or d.startswith(p + "-") for p in prefixes):
+            continue
+        sessions = {}
+        for f in glob.glob(os.path.join(base, d, "**", "*.jsonl"), recursive=True):
+            rel = os.path.relpath(f, os.path.join(base, d)).split(os.sep)
+            key = rel[0][:-len(".jsonl")] if len(rel) == 1 else rel[0]
+            sessions.setdefault(key, []).append(f)
+        for key in sorted(sessions):
+            files = sorted(sessions[key])
+            if any((mtime(f) or 0) >= since for f in files):
+                yield files
+
+
+def codex_transcripts(ctx, since):
+    base = os.path.join(os.environ.get("CODEX_HOME") or os.path.join(home(), ".codex"), "sessions")
+    for f in glob.glob(os.path.join(base, "**", "*.jsonl"), recursive=True):
+        if (mtime(f) or 0) < since:
+            continue
+        try:
+            with open(f, encoding="utf-8", errors="replace") as fh:
+                meta = json.loads(fh.readline())
+            cwd = (meta.get("payload") or {}).get("cwd") or ""
+        except (OSError, ValueError, AttributeError):
+            continue
+        if any(m in cwd for m in EVAL_MARKERS):
+            continue
+        if ctx.scope == "project" and not (cwd and under(cwd, ctx.repos)):
+            continue
+        yield [f]
+
+
+def known_skills(ctx):
+    names = set()
+    for checkout in (ctx.public, ctx.private):
+        for tier in TIERS:
+            names.update(scan(checkout, tier))
+    return names
+
+
+def scan_usage(ctx, since):
+    """{skill: set(days)} plus the oldest transcript day, for sessions changed since `since`."""
+    known = known_skills(ctx)
+    found, oldest = {}, None
+    for groups, scanner in ((claude_transcripts(ctx, since), scan_claude),
+                            (codex_transcripts(ctx, since), scan_codex)):
+        for files in groups:
+            explicit, touched = {}, {}
+            for f in files:
+                e, t = scanner(f, known)
+                for src, dst in ((e, explicit), (t, touched)):
+                    for name, day in src.items():
+                        dst[name] = max(dst.get(name, ""), day)
+                born = getattr(os.stat(f), "st_birthtime", None) if os.path.exists(f) else None
+                day = datetime.date.fromtimestamp(born).isoformat() if born else file_day(f)
+                oldest = day if oldest is None or day < oldest else oldest
+            if len(touched) > MAINT_CAP:  # an audit, eval or lint pass across skills, not a use
+                touched = {}
+            for name, day in list(touched.items()) + list(explicit.items()):
+                found.setdefault(name, set()).add(day)
+    return found, oldest
+
+
+def usage_path(ctx):
+    return os.path.join(ctx.private, USAGE_DIR, slug(ctx.machine or ctx.facts.get("hostname") or "machine") + ".json")
+
+
+def read_json(path):
+    try:
+        with open(path, encoding="utf-8") as fh:
+            data = json.load(fh)
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def record_usage(ctx):
+    """Scan transcripts changed since the last scan into this machine's usage file.
+    Returns True when the file changed. Needs the private checkout."""
+    if not (ctx.use_private and os.path.isdir(ctx.private)):
+        return False
+    path = usage_path(ctx)
+    data = read_json(path)
+    state = read_json(stamp("usage-scan.json"))
+    first = not os.path.exists(path) or state.get("file") != path
+    floor = time.time() - USAGE_DAYS * 86400
+    since = floor if first else max(floor, float(state.get("scanned", 0)) - 3600)
+    started = time.time()
+    found, oldest = scan_usage(ctx, since)
+    keep_from = days_before(today(), USAGE_DAYS)
+    skills = {}
+    old = data.get("skills") if isinstance(data.get("skills"), dict) else {}
+    for name, days in list(old.items()) + [(n, sorted(d)) for n, d in found.items()]:
+        if isinstance(days, list):
+            skills.setdefault(name, set()).update(d for d in days if isinstance(d, str) and d >= keep_from)
+    tracked = data.get("tracked_since") if isinstance(data.get("tracked_since"), str) else None
+    if first and oldest:
+        tracked = min(tracked or oldest, oldest)
+    tracked = tracked or today().isoformat()
+    new = {"machine": ctx.machine or UNMATCHED, "tracked_since": tracked,
+           "skills": {n: sorted(d) for n, d in sorted(skills.items()) if d}}
+    try:
+        os.makedirs(os.path.dirname(stamp("x")), exist_ok=True)
+        with open(stamp("usage-scan.json"), "w", encoding="utf-8") as fh:
+            json.dump({"file": path, "scanned": started}, fh)
+    except OSError:
+        pass
+    if new == data:
+        return False
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump(new, fh, indent=1, sort_keys=True)
+        fh.write("\n")
+    return True
+
+
+def merged_usage(ctx):
+    """{"skills": {name: sorted days}, "tracked_since": oldest day or None, "machines": [...]}."""
+    skills, tracked, machines = {}, None, []
+    base = os.path.join(ctx.private, USAGE_DIR)
+    for f in sorted(glob.glob(os.path.join(base, "*.json"))):
+        data = read_json(f)
+        days = data.get("skills") if isinstance(data.get("skills"), dict) else {}
+        for name, ds in days.items():
+            if isinstance(ds, list):
+                skills.setdefault(name, set()).update(d for d in ds if isinstance(d, str))
+        since = data.get("tracked_since")
+        if isinstance(since, str):
+            tracked = since if tracked is None or since < tracked else tracked
+        machines.append(str(data.get("machine") or os.path.basename(f)[:-5]))
+    return {"skills": {n: sorted(d) for n, d in skills.items()}, "tracked_since": tracked, "machines": machines}
+
+
+# ------------------------------------------------------------------------------------------ tidy
+
+TICKED_NAME = re.compile(r"`([a-z0-9][a-z0-9-]*)`")
+PATH_NAME = re.compile(r"(?=(?:skills|rarely-used|\.\.)/([a-z0-9][a-z0-9-]*)/)")
+DEP_SUFFIXES = (".md", ".py", ".sh", ".json", ".yaml", ".yml", ".txt", ".js", ".mjs", ".ts")
+
+
+def skill_refs(folder, names):
+    """Other skills a skill names (`name` in its text, or a path into a sibling skill)."""
+    refs = set()
+    for dp, dns, fns in os.walk(folder):
+        dns[:] = [d for d in dns if d not in GUARD_SKIP_DIRS]
+        for f in fns:
+            if not f.endswith(DEP_SUFFIXES):
+                continue
+            try:
+                with open(os.path.join(dp, f), encoding="utf-8") as fh:
+                    text = fh.read(MAX_GUARD_BYTES)
+            except (OSError, UnicodeError):
+                continue
+            if f.endswith(".md"):
+                refs.update(TICKED_NAME.findall(text))
+            refs.update(PATH_NAME.findall(text))
+    return (refs & names) - {os.path.basename(folder)}
+
+
+def tier_since(checkout, tier, name):
+    """Day the skill last arrived at <tier>/<name> (created, restored or shelved). A skill that
+    arrived in core within the window stays there, so new and restored skills get a month."""
+    day = git_out(checkout, "log", "-1", "--no-renames", "--diff-filter=A", "--date=short", "--format=%cd",
+                  "--", "{}/{}/SKILL.md".format(tier, name))
+    return day or today().isoformat()
+
+
+class Tidy(object):
+    """Which core skills to shelve and which shelved skills to restore. Usage is per name, so a
+    private skill that overrides a public one moves with it."""
+
+    def __init__(self, ctx, usage=None):
+        self.usage = usage if usage is not None else merged_usage(ctx)
+        self.cutoff = days_before(today(), IDLE_DAYS)
+        self.entries = {}  # (checkout, name) -> (tier, folder)
+        self.pinned = set()
+        for checkout in [c for c in ctx.checkouts() if os.path.isdir(c)]:
+            pins = read_catalog(checkout).get("pinned")
+            if isinstance(pins, list):
+                self.pinned.update(p for p in pins if isinstance(p, str))
+            for tier in TIERS:
+                for name, folder in scan(checkout, tier).items():
+                    self.entries[(checkout, name)] = (tier, folder)
+        names = set(n for _, n in self.entries)
+        self.refs = {}
+        for (checkout, name), (tier, folder) in self.entries.items():
+            self.refs.setdefault(name, set()).update(skill_refs(folder, names))
+        self.last = {n: (self.usage["skills"].get(n) or [""])[-1] for n in names}
+        self.since = {}
+        for (checkout, name), (tier, _) in self.entries.items():
+            self.since[name] = max(self.since.get(name, ""), tier_since(checkout, tier, name))
+        tracked = self.usage.get("tracked_since")
+        self.enough_data = bool(tracked) and tracked <= self.cutoff
+        core = set(n for (_, n), (tier, _) in self.entries.items() if tier == CORE)
+        shelf = set(n for (_, n), (tier, _) in self.entries.items() if tier == SHELF)
+        self.reason = {}
+        stay = set()
+        for n in sorted(core):
+            if n in self.pinned:
+                self.reason[n] = "pinned"
+            elif self.last[n] > self.cutoff:
+                self.reason[n] = "used " + self.last[n]
+            elif self.since[n] > self.cutoff:
+                self.reason[n] = "new or restored " + self.since[n]
+            elif not self.enough_data:
+                self.reason[n] = "under {} days of usage data".format(IDLE_DAYS)
+            else:
+                continue
+            stay.add(n)
+        # Symmetric with shelving: a shelved skill used anywhere in the window comes back, even when
+        # that use predates the shelving (another machine's usage can arrive late).
+        restore = set(n for n in shelf if self.last[n] > self.cutoff)
+        for n in restore:
+            self.reason[n] = "used " + self.last[n]
+        stay |= restore
+        frontier = sorted(stay)
+        while frontier:
+            n = frontier.pop()
+            for d in sorted(self.refs.get(n, ())):
+                if d not in stay:
+                    stay.add(d)
+                    frontier.append(d)
+                    self.reason[d] = "named by " + n
+        self.restore = stay & shelf
+        self.shelve = core - stay
+        for n in self.shelve:
+            self.reason[n] = "last used " + self.last[n] if self.last[n] else "no recorded use"
+
+    def tier(self, name):
+        tiers = set(t for (_, n), (t, _) in self.entries.items() if n == name)
+        return CORE if CORE in tiers else SHELF
+
+    def moves(self, checkout):
+        here = lambda n, t: self.entries.get((checkout, n), (None,))[0] == t  # noqa: E731
+        return ([n for n in sorted(self.shelve) if here(n, CORE)],
+                [n for n in sorted(self.restore) if here(n, SHELF)])
+
+
+def catalog_builder(checkout):
+    script = os.path.join(checkout, "scripts", "build-catalog.py")
+    return script if os.path.isfile(script) else None
+
+
+def move_skills(checkout, shelve, restore, message=None):
+    """Move skill folders between tiers in one clean checkout and commit. (ok, error)."""
+    if not shelve and not restore:
+        return True, None
+    with file_lock(checkout_lock_path(checkout), blocking=True, timeout=60) as got:
+        if not got:
+            return False, "checkout is locked"
+        if git_out(checkout, "status", "--porcelain"):
+            return False, "checkout has uncommitted changes; tidy waits"
+        if not message and ahead_behind(checkout) != (0, 0):
+            return False, "checkout is not in step with origin; tidy waits for the next sync"
+        builder = catalog_builder(checkout)
+        if builder:
+            probe = run([sys.executable, "-c", "import yaml"], timeout=20)
+            if probe is None or probe.returncode != 0:
+                return False, "PyYAML missing, so the README can't be rebuilt; tidy skipped"
+        done = []
+        for names, src, dst in ((shelve, CORE, SHELF), (restore, SHELF, CORE)):
+            for name in names:
+                a, b = os.path.join(checkout, src, name), os.path.join(checkout, dst, name)
+                if os.path.lexists(b) or not os.path.isdir(a):
+                    continue
+                os.makedirs(os.path.dirname(b), exist_ok=True)
+                os.rename(a, b)
+                done.append((a, b))
+        if not done:
+            return True, None
+
+        def undo(why):
+            for a, b in reversed(done):
+                if os.path.isdir(b) and not os.path.lexists(a):
+                    os.rename(b, a)
+            git(checkout, "reset", "--quiet", "--hard", "HEAD")
+            return False, why
+
+        if builder:
+            r = run([sys.executable, builder], timeout=120)
+            if r is None or r.returncode != 0:
+                return undo("catalog rebuild failed: " + last_line(r))
+        r = git(checkout, "add", "-A", timeout=60)
+        if r is None or r.returncode != 0:
+            return undo("git add failed: " + last_line(r))
+        if not message:
+            parts = []
+            if shelve:
+                parts.append("shelve {} (unused {}+ days)".format(", ".join(shelve), IDLE_DAYS))
+            if restore:
+                parts.append("restore {} (used again)".format(", ".join(restore)))
+            message = "; ".join(parts)
+            message = message[0].upper() + message[1:]
+        r = git(checkout, "commit", "--quiet", "-m", message, timeout=120)
+        if r is None or r.returncode != 0:
+            return undo("git commit failed: " + last_line(r))
+        return True, None
+
+
+def maintain_due():
+    last = mtime(stamp("maintained"))
+    return last is None or time.time() - last >= interval("SKILLS_MAINTAIN_INTERVAL", MAINTAIN_INTERVAL)
+
+
+def commit_usage(ctx):
+    path = usage_path(ctx)
+    rel = os.path.relpath(path, ctx.private)
+    with file_lock(checkout_lock_path(ctx.private), blocking=True, timeout=60) as got:
+        if not got:
+            return False
+        git(ctx.private, "add", "--", rel)
+        r = git(ctx.private, "commit", "--quiet", "-m", "Record skill usage on " + (ctx.machine or UNMATCHED),
+                "--", rel, timeout=60)
+        return r is not None and r.returncode == 0
+
+
+def maintain_checkouts(ctx):
+    """Daily: record usage, then tidy both checkouts. (notes, checkouts with new commits)."""
+    notes, committed = [], []
+    if not (ctx.use_private and os.path.isdir(ctx.private)):
+        return notes, committed  # usage lives in the private checkout; no data, no tidy
+    try:
+        if record_usage(ctx) and commit_usage(ctx):
+            committed.append(ctx.private)
+        tidy = Tidy(ctx)
+        for checkout in ctx.checkouts():
+            shelve, restore = tidy.moves(checkout)
+            before = git_out(checkout, "rev-parse", "HEAD")
+            ok, err = move_skills(checkout, shelve, restore)
+            if err:
+                notes.append("tidy {}: {}".format(os.path.basename(checkout), err))
+            if ok and git_out(checkout, "rev-parse", "HEAD") != before and checkout not in committed:
+                committed.append(checkout)
+    except Exception as error:  # noqa: BLE001 - background maintenance must never crash the sync
+        notes.append("maintain failed ({}: {})".format(type(error).__name__, error))
+    return notes, committed
 
 
 # -------------------------------------------------------------------------------- up / link / ...
@@ -861,7 +1527,7 @@ def cmd_up(args):
     try:
         ctx = Context(args)
         if args.wait:
-            sync_checkouts(ctx, relink=False)
+            sync_checkouts(ctx, relink=False, maintain=False)
         else:
             spawn_sync(ctx, args)
         plan, result = do_link(ctx)
@@ -939,8 +1605,9 @@ def cmd_doctor(args):
                 problems.append("{} checkout missing: {}".format(label, short(path)))
             continue
         if state.get("dirty"):
-            problems.append("{} checkout dirty: {} file(s); commit with `skills publish`".format(
-                label, state["dirty"]))
+            problems.append("{} checkout dirty: {} file(s); `skills autosync` (the Stop hook) or "
+                            "`skills publish` commits it".format(label, state["dirty"]))
+        state["rarely_used"] = sorted(scan(path, SHELF))
         if state.get("ahead"):
             warnings.append("{} checkout has {} unpushed commit(s)".format(label, state["ahead"]))
         if state.get("behind"):
@@ -1000,6 +1667,12 @@ def cmd_doctor(args):
         (warnings if mcp.no_claude else problems).append("mcp {} not registered for {}".format(name, short(repo)))
     fetched, attempted = mtime(stamp("fetched")), mtime(stamp("attempted"))
     report["fetched"], report["attempted"] = fetched, attempted
+    report["maintained"] = mtime(stamp("maintained"))
+    if ctx.use_private and os.path.isdir(ctx.private):
+        usage = merged_usage(ctx)
+        report["usage"] = {"machines": usage["machines"], "tracked_since": usage["tracked_since"]}
+        if not os.path.exists(usage_path(ctx)) and report["maintained"] is not None:
+            warnings.append("no usage recorded for this machine yet ({})".format(short(usage_path(ctx))))
     if fetched is None or time.time() - fetched > 7 * 86400:
         warnings.append("last successful fetch: " + ago(fetched))
     try:
@@ -1021,7 +1694,13 @@ def cmd_doctor(args):
             say("{:<8} {} on {} · {} dirty · ahead {} behind {}".format(
                 label, short(state["path"]), state.get("branch"), state.get("dirty", 0),
                 state.get("ahead", "?"), state.get("behind", "?")))
-    say("skills   {} selected of {} available".format(len(plan.selected), len(plan.available)))
+    shelved = sum(len(st.get("rarely_used", [])) for st in report["checkouts"].values())
+    say("skills   {} selected of {} available · {} rarely used (not linked)".format(
+        len(plan.selected), len(plan.available), shelved))
+    if "usage" in report:
+        say("usage    {} machine(s), tracked since {} · tidied {}".format(
+            len(report["usage"]["machines"]), report["usage"]["tracked_since"] or "never",
+            ago(report["maintained"])))
     for d, entry in sorted(report["links"].items()):
         say("links    {}: {} ok".format(short(d), entry["ok"]))
     for name in plan.overrides:
@@ -1373,70 +2052,383 @@ def changed_paths(checkout, upstream):
     return paths
 
 
+def changed_skills(checkout, paths):
+    names = set()
+    for p in paths:
+        parts = p.split("/")
+        if len(parts) >= 3 and parts[0] in TIERS:
+            names.add(parts[1])
+    return sorted(names)
+
+
+def auto_message(checkout, paths):
+    skills = changed_skills(checkout, paths)
+    other = sorted(set(p.split("/")[0] for p in paths if p.split("/")[0] not in TIERS))
+    named = skills + other
+    head = ", ".join(named[:4]) + (" and {} more".format(len(named) - 4) if len(named) > 4 else "")
+    return "Update {} (auto-sync)".format(head or "skills")
+
+
+def save_checkout(checkout, message=None):
+    """Guard (public), lint changed skills, commit, rebase if needed, push.
+    Returns (status, lines). status: nothing | pushed | guard | lint | conflict | failed."""
+    lines = []
+    with file_lock(checkout_lock_path(checkout), blocking=True, timeout=120) as got:
+        if not got:
+            return "failed", ["another publish or sync holds the lock; try again"]
+        branch = git_out(checkout, "symbolic-ref", "--quiet", "--short", "HEAD")
+        if not branch:
+            return "failed", ["detached HEAD; check out a branch first"]
+        if any(os.path.exists(os.path.join(checkout, ".git", m))
+               for m in ("MERGE_HEAD", "rebase-merge", "rebase-apply", "CHERRY_PICK_HEAD")):
+            return "conflict", ["a merge or rebase is in progress; finish or abort it first"]
+        upstream = git_out(checkout, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}")
+        dirty = bool(git_out(checkout, "status", "--porcelain"))
+        ahead = ahead_behind(checkout)[0] if upstream else 1
+        if not dirty and not ahead:
+            return "nothing", []
+        paths = changed_paths(checkout, upstream)
+        if not is_private_checkout(checkout):
+            hits, _, bad, scanned = run_guard([checkout], root=os.path.dirname(checkout))
+            if hits:
+                for path, n, name in hits:
+                    lines.append("{}:{}: {}".format(display(path), n, name))
+                lines.append("guard hits in the public checkout; fix them (or mark a deliberate line "
+                             "with `{}`)".format(ALLOW_MARKER))
+                return "guard", lines
+        skills = [s for s in changed_skills(checkout, paths)
+                  if os.path.isfile(os.path.join(checkout, CORE, s, "SKILL.md"))]
+        linter = find_linter(checkout)
+        if skills and linter:
+            failed = []
+            for name in skills:
+                r = run([sys.executable, linter, os.path.join(checkout, CORE, name)], timeout=120)
+                if r is None or r.returncode != 0:
+                    failed.append(name)
+                    lines.append((r.stderr or r.stdout if r is not None else "lint timed out").rstrip())
+            if failed:
+                lines.append("lint failed: " + ", ".join(failed))
+                return "lint", lines
+        elif skills:
+            lines.append("skillsmith linter not found; lint skipped")
+        if dirty:
+            for step in (["add", "-A"], ["commit", "--quiet", "-m", message or auto_message(checkout, paths)]):
+                r = git(checkout, *step, timeout=120)
+                if r is None or r.returncode != 0:
+                    lines.append("git {} failed: {}".format(step[0], last_line(r)))
+                    return "failed", lines
+        push = ["push", "--quiet"] + ([] if upstream else ["-u", "origin", branch])
+        r = git(checkout, *push, timeout=180)
+        if (r is None or r.returncode != 0) and upstream:
+            fetched = git(checkout, "fetch", "--quiet", "origin", timeout=120)
+            if fetched is None or fetched.returncode != 0:
+                lines.append("committed locally; push and fetch failed: " + last_line(fetched))
+                return "failed", lines
+            err = rebase_onto_upstream(checkout)
+            if err:
+                lines.append("committed locally, but the checkout " + err)
+                return "conflict", lines
+            r = git(checkout, *push, timeout=180)
+        if r is None or r.returncode != 0:
+            lines.append("committed locally, but the push failed: " + last_line(r))
+            return "failed", lines
+        lines.append("pushed {} {} ({})".format(short(checkout), git_out(checkout, "rev-parse", "--short", "HEAD"),
+                                                git_out(checkout, "log", "-1", "--format=%s")))
+        return "pushed", lines
+
+
 def cmd_publish(args):
     checkout = git_out(expand(args.checkout), "rev-parse", "--show-toplevel")
     if not checkout:
         say("publish: not a git checkout: " + args.checkout, sys.stderr)
         return 1
-    with file_lock(checkout_lock_path(checkout), blocking=True, timeout=120) as got:
-        if not got:
-            say("publish: another publish or sync holds the lock; try again", sys.stderr)
-            return 1
-        branch = git_out(checkout, "symbolic-ref", "--quiet", "--short", "HEAD")
-        if not branch:
-            say("publish: detached HEAD; check out a branch first", sys.stderr)
-            return 1
-        upstream = git_out(checkout, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}")
-        dirty = bool(git_out(checkout, "status", "--porcelain"))
-        ahead = int(git_out(checkout, "rev-list", "--count", "@{u}..HEAD") or 0) if upstream else 1
-        if not dirty and not ahead:
-            say("publish: nothing to publish")
-            return 0
-        private = is_private_checkout(checkout)
-        if not private:
-            hits, _, bad, scanned = run_guard([checkout])
-            if hits:
-                report_guard(hits, [], bad, scanned)
-                say("publish: refused, guard hits in the public checkout", sys.stderr)
-                return 2
-        skills = sorted(set(p.split("/")[1] for p in changed_paths(checkout, upstream)
-                            if p.startswith("skills/") and p.count("/") >= 2))
-        skills = [s for s in skills if os.path.isfile(os.path.join(checkout, "skills", s, "SKILL.md"))]
-        linter = find_linter(checkout)
-        if skills and linter:
-            failed = []
-            for s in skills:
-                r = run([sys.executable, linter, os.path.join(checkout, "skills", s)], timeout=120)
-                if r is None or r.returncode != 0:
-                    failed.append(s)
-                    say((r.stderr if r is not None else "lint timed out").rstrip(), sys.stderr)
-            if failed:
-                say("publish: refused, lint failed: " + ", ".join(failed), sys.stderr)
-                return 1
-        elif skills:
-            say("publish: skillsmith linter not found; lint skipped", sys.stderr)
-        if dirty:
-            for step in (["add", "-A"], ["commit", "--quiet", "-m", args.message]):
-                r = git(checkout, *step, timeout=120)
-                if r is None or r.returncode != 0:
-                    say("publish: git {} failed: {}".format(step[0], (r.stderr or r.stdout).strip() if r else "timeout"),
-                        sys.stderr)
-                    return 1
-        push = ["push", "--quiet"] + ([] if upstream else ["-u", "origin", branch])
-        r = git(checkout, *push, timeout=180)
-        if (r is None or r.returncode != 0) and upstream:
-            fetched = git(checkout, "fetch", "--quiet", "origin", timeout=120)
-            rebased = git(checkout, "rebase", "--quiet", "@{u}", timeout=120) if fetched and fetched.returncode == 0 else None
-            if rebased is None or rebased.returncode != 0:
-                git(checkout, "rebase", "--abort")
-                say("publish: committed locally, but the push was rejected and the rebase failed", sys.stderr)
-                return 1
-            r = git(checkout, *push, timeout=180)
-        if r is None or r.returncode != 0:
-            say("publish: committed locally, but the push failed: " + ((r.stderr.strip() if r else "timeout")), sys.stderr)
-            return 1
-        say("publish: pushed {} ({})".format(branch, git_out(checkout, "rev-parse", "--short", "HEAD")))
+    status, lines = save_checkout(checkout, args.message)
+    for line in lines:
+        say(("publish: " if status != "guard" or not re.search(r":\d+: ", line) else "") + line,
+            sys.stdout if status in ("pushed", "guard") else sys.stderr)
+    if status == "nothing":
+        say("publish: nothing to publish")
+    return {"nothing": 0, "pushed": 0, "guard": 2}.get(status, 1)
+
+
+def cmd_autosync(args):
+    """Stop hook: commit and push every dirty or unpushed checkout with a generated message.
+    Exit 2 when something needs the agent (guard hit, lint failure, rebase conflict), 1 when a
+    push failed for a transient reason, 0 otherwise. Prints nothing when nothing changed."""
+    ctx = Context(args)
+    code = 0
+    for checkout in ctx.checkouts():
+        if not os.path.isdir(os.path.join(checkout, ".git")):
+            continue
+        status, lines = save_checkout(checkout)
+        label = "skills autosync ({}): ".format(short(checkout))
+        out = sys.stdout if status == "pushed" else sys.stderr
+        for line in lines:
+            say(label + line, out)
+        if status in ("guard", "lint", "conflict"):
+            say(label + "not synced. If this is another session's unfinished edit, leave it; it syncs "
+                "when that session stops.", sys.stderr)
+            code = 2
+        elif status == "failed" and code == 0:
+            code = 1
+    return code
+
+
+# ------------------------------------------------------------------------------------------ find
+
+FIND_STOP = set("a an and any are can could do does find for have help i if is it like me my of on "
+                "one or see skill skills some something that the there this to we what which with you".split())
+TIER_LABEL = {CORE: "core", SHELF: "rarely used", "retired": "retired", "external": "external"}
+TIER_ORDER = {CORE: 0, SHELF: 1, "retired": 2, "external": 3}
+
+
+def own_checkouts():
+    """The checkout this tool runs from, and its private sibling when present."""
+    public = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+    return public, os.path.join(os.path.dirname(public), PRIVATE)
+
+
+def frontmatter(path):
+    """(fields, body) of a SKILL.md: single-line values plus folded `>`/`|` blocks."""
+    try:
+        with open(path, encoding="utf-8") as fh:
+            text = fh.read(MAX_GUARD_BYTES)
+    except (OSError, UnicodeError):
+        return {}, ""
+    m = re.match(r"^---\s*\n(.*?)\n---\s*\n?(.*)$", text, re.S)
+    if not m:
+        return {}, text
+    fields, key = {}, None
+    for line in m.group(1).splitlines():
+        kv = re.match(r"^([A-Za-z0-9_-]+):\s*(.*)$", line)
+        if kv:
+            key, value = kv.group(1), kv.group(2).strip()
+            fields[key] = "" if value in (">", "|", ">-", "|-") else scalar(value) if value else ""
+        elif key and line.startswith((" ", "\t")) and isinstance(fields.get(key), str):
+            fields[key] = (fields[key] + " " + line.strip()).strip()
+    return fields, m.group(2)
+
+
+def find_entries(checkouts):
+    entries = []
+    for checkout in checkouts:
+        if not os.path.isdir(checkout):
+            continue
+        kind = "private" if is_private_checkout(checkout) else "public"
+        catalog = read_catalog(checkout)
+        summaries = catalog.get("skill_summaries") if isinstance(catalog.get("skill_summaries"), dict) else {}
+        category = {}
+        for c in catalog.get("categories") or []:
+            if not isinstance(c, dict):
+                continue
+            for n in c.get("skills") or []:
+                category[n] = str(c.get("key") or "")
+            for link in c.get("links") or []:
+                if not isinstance(link, dict):
+                    continue
+                url = link.get("url") or ("https://github.com/" + link["repo"] if link.get("repo") else "")
+                tags = link.get("tags") if isinstance(link.get("tags"), list) else []
+                entries.append({
+                    "name": str(link.get("name") or link.get("repo") or url), "tier": "external",
+                    "kind": kind, "category": str(c.get("key") or ""), "where": url,
+                    "description": str(link.get("note") or ""), "tags": [str(t) for t in tags],
+                    "by": str(link.get("by") or ""), "source": str(link.get("from") or ""),
+                    "source_url": str(link.get("from_url") or ""), "body": ""})
+        folders = [(tier, scan(checkout, tier)) for tier in TIERS]
+        folders.append(("retired", scan(os.path.join(checkout, "archive"), "skills")))
+        for tier, found in folders:
+            for name, folder in sorted(found.items()):
+                fields, body = frontmatter(os.path.join(folder, "SKILL.md"))
+                entries.append({
+                    "name": name, "tier": tier, "kind": kind, "category": category.get(name, ""),
+                    "where": os.path.join(folder, "SKILL.md"),
+                    "description": str(fields.get("description") or summaries.get(name) or ""),
+                    "summary": str(summaries.get(name) or ""), "tags": [], "source": "", "source_url": "",
+                    "body": body})
+    return entries
+
+
+def query_terms(words):
+    terms = []
+    for w in re.findall(r"[a-z0-9]+", " ".join(words).lower()):
+        if w not in FIND_STOP and len(w) > 1 and w not in terms:
+            terms.append(w)
+    return terms
+
+
+def term_hits(term, text):
+    text = text.lower().replace("-", " ")
+    if len(term) >= 4:
+        stem = term[:-1] if term.endswith("s") else term
+        return stem in text
+    return re.search(r"\b" + re.escape(term) + r"s?\b", text) is not None
+
+
+def score_entry(entry, terms, phrase):
+    fields = ((6, entry["name"]), (3, entry["description"] + " " + entry.get("summary", "")),
+              (2, " ".join(entry["tags"]) + " " + entry["category"] + " " + entry.get("by", "") + " " + entry["source"]),
+              (1, entry["body"]))
+    total, matched = 0, 0
+    for term in terms:
+        best = max([w for w, text in fields if term_hits(term, text)] or [0])
+        total += best
+        matched += 1 if best else 0
+    if not matched:
         return 0
+    if matched == len(terms) and len(terms) > 1:
+        total += 2
+    if phrase and phrase.replace(" ", "-") in entry["name"].lower():
+        total += 5
+    return total
+
+
+def cmd_find(args):
+    if getattr(args, "machines", None):
+        ctx = Context(args)
+        checkouts = [ctx.public, ctx.private]
+    else:
+        checkouts = list(own_checkouts())
+    entries = find_entries(checkouts)
+    terms = query_terms(args.query)
+    phrase = " ".join(args.query).strip().lower()
+    if terms:
+        ranked = [(score_entry(e, terms, phrase), e) for e in entries]
+        ranked = [(sc, e) for sc, e in ranked if sc > 0]
+    else:
+        ranked = [(0, e) for e in entries]
+    ranked.sort(key=lambda t: (-t[0], TIER_ORDER[t[1]["tier"]], t[1]["name"]))
+    shown = ranked[:args.limit] if terms else ranked
+    if args.json:
+        say(json.dumps([dict({k: v for k, v in e.items() if k != "body"}, score=sc,
+                             tier=TIER_LABEL[e["tier"]]) for sc, e in shown], indent=2))
+        return 0 if shown else 1
+    if not shown:
+        say("find: nothing matches {!r} in {} skills and links; try other words".format(phrase, len(entries)))
+        return 1
+    if terms:
+        say("{} of {} match(es) for {!r}:".format(len(shown), len(ranked), phrase))
+    for sc, e in shown:
+        where = short(e["where"]) if e["tier"] != "external" else e["where"]
+        label = TIER_LABEL[e["tier"]] + ("" if e["tier"] == "external" else ", " + e["kind"])
+        say("")
+        say("{}{}  [{}{}]".format(e["name"], " by " + e["by"] if e.get("by") else "", label,
+                                  ", " + e["category"] if e["category"] else ""))
+        if e["description"]:
+            desc = " ".join(e["description"].split())
+            say("  " + (desc if len(desc) <= 240 else desc[:237] + "..."))
+        say("  " + where)
+        if e["source"]:
+            say("  seen in: {}{}".format(e["source"], " (" + e["source_url"] + ")" if e["source_url"] else ""))
+    if any(e["tier"] == SHELF for _, e in shown):
+        say("")
+        say("rarely used = not linked. Read its SKILL.md in place and follow it; a use moves it back to core "
+            "at the next daily tidy, or run `skills restore NAME` to link it now.")
+    return 0
+
+
+# ------------------------------------------------------------------------------- usage commands
+
+def usage_report(ctx):
+    tidy = Tidy(ctx)
+    rows = {}
+    for (checkout, name), (tier, _) in sorted(tidy.entries.items(), key=lambda t: t[0][1]):
+        days = tidy.usage["skills"].get(name, [])
+        tier = tidy.tier(name)
+        verdict = "shelve" if name in tidy.shelve else "restore" if name in tidy.restore else \
+            ("keep" if tier == CORE else "stay shelved")
+        kind = "private" if checkout == ctx.private else "public"
+        if name in rows:
+            kind = rows[name]["kind"] + "+" + kind
+        rows[name] = {"tier": TIER_LABEL[tier], "kind": kind, "last": days[-1] if days else None,
+                      "days_used": len(days), "tier_since": tidy.since[name], "verdict": verdict,
+                      "reason": tidy.reason.get(name, "")}
+    return {"machines": tidy.usage["machines"], "tracked_since": tidy.usage["tracked_since"],
+            "idle_days": IDLE_DAYS, "window_days": USAGE_DAYS, "skills": rows}
+
+
+def cmd_usage(args):
+    ctx = Context(args)
+    if args.scan:
+        if ctx.use_private and os.path.isdir(ctx.private):
+            record_usage(ctx)
+        else:
+            say("usage: no private checkout on this machine, so usage can't be recorded", sys.stderr)
+    report = usage_report(ctx)
+    if args.json:
+        say(json.dumps(report, indent=2, sort_keys=True))
+        return 0
+    say("usage from {} machine(s) ({}), tracked since {}; idle after {} days".format(
+        len(report["machines"]), ", ".join(report["machines"]) or "none", report["tracked_since"] or "never",
+        IDLE_DAYS))
+    say("{:<22} {:<12} {:<8} {:<11} {:>4}  {:<12} {}".format("skill", "tier", "kind", "last used", "days",
+                                                            "verdict", "why"))
+    for name, r in sorted(report["skills"].items(), key=lambda t: (t[1]["tier"], t[0])):
+        say("{:<22} {:<12} {:<8} {:<11} {:>4}  {:<12} {}".format(
+            name, r["tier"], r["kind"], r["last"] or "-", r["days_used"], r["verdict"], r["reason"]))
+    return 0
+
+
+def cmd_tidy(args):
+    ctx = Context(args)
+    if not (ctx.use_private and os.path.isdir(ctx.private)):
+        say("tidy: usage lives in the private checkout, which this machine's profile doesn't have", sys.stderr)
+        return 1
+    tidy = Tidy(ctx)
+    if not tidy.shelve and not tidy.restore:
+        say("tidy: nothing to move" + ("" if tidy.enough_data else " (under {} days of usage data)".format(IDLE_DAYS)))
+        return 0
+    for name in sorted(tidy.shelve):
+        say("shelve   {:<22} {}".format(name, tidy.reason.get(name, "")))
+    for name in sorted(tidy.restore):
+        say("restore  {:<22} {}".format(name, tidy.reason.get(name, "")))
+    if args.dry_run:
+        return 0
+    return apply_moves(ctx.checkouts(), tidy.moves)
+
+
+def apply_moves(checkouts, moves, message=None):
+    code = 0
+    for checkout in checkouts:
+        shelve, restore = moves(checkout)
+        if not shelve and not restore:
+            continue
+        ok, err = move_skills(checkout, shelve, restore, message)
+        if not ok:
+            say("{}: {}".format(short(checkout), err), sys.stderr)
+            code = 1
+            continue
+        status, lines = save_checkout(checkout)
+        for line in lines:
+            say(line, sys.stdout if status in ("pushed", "nothing") else sys.stderr)
+        if status not in ("pushed", "nothing"):
+            code = 1
+    return code
+
+
+def cmd_move(args):
+    """skills shelve|restore NAME ...: move by hand. A restore arrives in core today, so it stays a
+    month; tidy brings back a shelved skill that was used in the last month."""
+    if getattr(args, "machines", None):
+        ctx = Context(args)
+        checkouts = [c for c in ctx.checkouts() if os.path.isdir(c)]
+    else:
+        checkouts = [c for c in own_checkouts() if os.path.isdir(c)]
+    src = CORE if args.command == "shelve" else SHELF
+    where, missing = {}, []
+    for name in args.names:
+        hits = [c for c in checkouts if name in scan(c, src)]
+        if hits:
+            where.setdefault(hits[-1], []).append(name)
+        else:
+            missing.append(name)
+    for name in missing:
+        say("{}: no {} skill named {}".format(args.command, TIER_LABEL[src], name), sys.stderr)
+    if not where:
+        return 1
+    verb = "Shelve" if args.command == "shelve" else "Restore"
+    moves = lambda c: (where.get(c, []), []) if args.command == "shelve" else ([], where.get(c, []))  # noqa: E731
+    code = apply_moves(list(where), moves, "{} {} (by hand)".format(verb, ", ".join(sum(where.values(), []))))
+    return code or (1 if missing else 0)
 
 
 # ------------------------------------------------------------------------------------------ main
@@ -1470,6 +2462,27 @@ def build_parser():
     publish = sub.add_parser("publish", help="lock, guard (public), lint, commit, push")
     publish.add_argument("--checkout", required=True, metavar="C")
     publish.add_argument("-m", "--message", required=True, metavar="MSG")
+    autosync = sub.add_parser("autosync", help="Stop hook: publish every dirty or unpushed checkout "
+                                                "with a generated message; exit 2 when the agent must fix something")
+    add_profile_args(autosync)
+    find = sub.add_parser("find", help="search core, rarely used and retired skills plus external links")
+    find.add_argument("query", nargs="*", metavar="QUERY")
+    find.add_argument("--json", action="store_true")
+    find.add_argument("--limit", type=int, default=8, metavar="N")
+    find.add_argument("--machines", metavar="M", help="use this machine's checkouts (default: beside this tool)")
+    find.add_argument("--repo", action="append", metavar="R", help=argparse.SUPPRESS)
+    usage = sub.add_parser("usage", help="per-skill last use across machines and what tidy would do")
+    add_profile_args(usage)
+    usage.add_argument("--scan", action="store_true", help="record this machine's transcripts first")
+    usage.add_argument("--json", action="store_true")
+    tidy = sub.add_parser("tidy", help="shelve idle core skills and restore used shelved ones, then push")
+    add_profile_args(tidy)
+    tidy.add_argument("--dry-run", action="store_true")
+    for verb, text in (("shelve", "move core skills to rarely-used/ and push"),
+                       ("restore", "move rarely used skills back to core and push")):
+        move = sub.add_parser(verb, help=text)
+        move.add_argument("names", nargs="+", metavar="NAME")
+        add_profile_args(move)
     sync = sub.add_parser("_sync")
     add_profile_args(sync)
     return parser
@@ -1483,7 +2496,8 @@ def main(argv=None):
     parser = build_parser()
     args = parser.parse_args(argv)
     handlers = {"up": cmd_up, "link": cmd_link, "unlink": cmd_unlink, "doctor": cmd_doctor,
-                "guard": cmd_guard, "publish": cmd_publish,
+                "guard": cmd_guard, "publish": cmd_publish, "autosync": cmd_autosync, "find": cmd_find,
+                "usage": cmd_usage, "tidy": cmd_tidy, "shelve": cmd_move, "restore": cmd_move,
                 "_sync": lambda a: (sync_checkouts(Context(a)), 0)[1]}
     if args.command not in handlers:
         parser.print_help()

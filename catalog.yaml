@@ -28,6 +28,7 @@ skill_summaries:
   track-pilot-evidence: Track pilot criteria, evidence and risks where agents propose and humans decide.
   skillsmith: Make a skill from the repo, then keep it only if it beats the same model without it.
 
+
 categories:
   - key: research
     title: Research
@@ -62,6 +63,160 @@ categories:
         note: UI and UX guidance for agents building interfaces. Large; its 119-rule usability list is the useful part.
       - repo: Leonxlnx/taste-skill
         note: Aesthetic judgment for generated frontends.
+      - url: https://github.com/emilkowalski/skills
+        name: emilkowalski-skills
+        by: "Emil Kowalski"
+        note: "Collection of design-engineering skills for UI polish and motion: building, reviewing and auditing animations, Apple-style interaction, and an animation glossary."
+        tags: [skill-collection, web-design, motion, animation, ui]
+        from: "Insane Claude Design Skills You Need To Actually Build Beautiful Sites"
+        from_url: https://www.youtube.com/watch?v=Ysr7oNDajJI
+      - url: https://github.com/emilkowalski/skills/tree/main/skills/emil-design-eng
+        name: emil-design-eng
+        by: "Emil Kowalski"
+        note: "Encodes Emil Kowalski's approach to UI polish, component design and animation decisions; a starting skill when building a new interface."
+        tags: [web-design, ui, motion]
+        from: "Insane Claude Design Skills You Need To Actually Build Beautiful Sites"
+        from_url: https://www.youtube.com/watch?v=Ysr7oNDajJI
+      - url: https://github.com/emilkowalski/skills/tree/main/skills/animate
+        name: animate
+        by: "Emil Kowalski"
+        note: "Builds one animation in a fixed order of decisions (whether to animate, purpose, tool, properties, curve, duration, interruption, exit) and writes the code; use it to add motion to an existing site or app."
+        tags: [motion, animation, web-design]
+        from: "Insane Claude Design Skills You Need To Actually Build Beautiful Sites"
+        from_url: https://www.youtube.com/watch?v=Ysr7oNDajJI
+      - url: https://github.com/emilkowalski/skills/tree/main/skills/animation-vocabulary
+        name: animation-vocabulary
+        by: "Emil Kowalski"
+        note: "Glossary that turns a vague description of a motion effect into its exact name, so you can prompt an agent or designer precisely."
+        tags: [motion, animation, prompting]
+        from: "Insane Claude Design Skills You Need To Actually Build Beautiful Sites"
+        from_url: https://www.youtube.com/watch?v=Ysr7oNDajJI
+      - url: https://github.com/emilkowalski/skills/tree/main/skills/apple-design
+        name: apple-design
+        by: "Emil Kowalski"
+        note: "Apple's interface and motion principles translated for the web: springs, gestures, drag and sheet interactions, materials, typography and reduced motion."
+        tags: [ui, motion, gestures, web-design]
+        from: "Insane Claude Design Skills You Need To Actually Build Beautiful Sites"
+        from_url: https://www.youtube.com/watch?v=Ysr7oNDajJI
+      - url: https://github.com/ConardLi/garden-skills
+        name: garden-skills
+        by: "ConardLi"
+        note: "Collection of skills for web design, knowledge-base retrieval, image generation, article layout and web video presentations."
+        tags: [skill-collection, web-design, image-generation]
+        from: "Insane Claude Design Skills You Need To Actually Build Beautiful Sites"
+        from_url: https://www.youtube.com/watch?v=Ysr7oNDajJI
+      - url: https://github.com/ConardLi/garden-skills/tree/main/skills/web-design-engineer
+        name: web-design-engineer
+        by: "ConardLi"
+        note: "Builds or redesigns browser-rendered visual work (pages, dashboards, prototypes, decks) from real design references, and scores an existing design so you can iterate toward a target."
+        tags: [web-design, design-critique, prototyping]
+        from: "Insane Claude Design Skills You Need To Actually Build Beautiful Sites"
+        from_url: https://www.youtube.com/watch?v=Ysr7oNDajJI
+      - url: https://github.com/elayadesign/ai-design-skills/tree/main/skills/landing-page-design
+        name: landing-page-design
+        by: "Elaya"
+        note: "Single-skill system for conversion-focused landing pages: intake questions, page structure, conversion copy, SEO, and strict visual rules for type, spacing and motion."
+        tags: [landing-page, web-design, conversion, seo]
+        from: "Insane Claude Design Skills You Need To Actually Build Beautiful Sites"
+        from_url: https://www.youtube.com/watch?v=Ysr7oNDajJI
+      - url: https://github.com/MengTo/Skills
+        name: mengto-skills
+        by: "Meng To"
+        note: "Collection of agent skills for designers and builders covering web design, UI, 3D, media, game development and agent workflow."
+        tags: [skill-collection, web-design, motion, 3d]
+        from: "Insane Claude Design Skills You Need To Actually Build Beautiful Sites"
+        from_url: https://www.youtube.com/watch?v=Ysr7oNDajJI
+      - url: https://github.com/MengTo/Skills/tree/main/agent-skills/web-design/build-awwwards-quality-sites
+        name: build-awwwards-quality-sites
+        by: "Meng To"
+        note: "Art-directs and builds motion-rich marketing and landing sites with GSAP choreography, smooth scrolling, scroll storytelling and optional Three.js shaders."
+        tags: [web-design, motion, scroll-storytelling, landing-page]
+        from: "Insane Claude Design Skills You Need To Actually Build Beautiful Sites"
+        from_url: https://www.youtube.com/watch?v=Ysr7oNDajJI
+      - url: https://github.com/MengTo/Skills/tree/main/agent-skills/codex/video-to-superprompt
+        name: video-to-superprompt
+        by: "Meng To"
+        note: "Analyses a screen recording or reference video of a site and writes a detailed prompt for recreating its design, animations and interactions."
+        tags: [prompting, web-design, video]
+        from: "Insane Claude Design Skills You Need To Actually Build Beautiful Sites"
+        from_url: https://www.youtube.com/watch?v=Ysr7oNDajJI
+      - url: https://github.com/jakubkrehel/skills
+        name: jakubkrehel-skills
+        by: "Jakub Krehel"
+        note: "Collection of interface skills split by area (layout, typography, colour, accessibility, writing, UI) plus a cross-category review skill."
+        tags: [skill-collection, ui, design-review, accessibility]
+        from: "Insane Claude Design Skills You Need To Actually Build Beautiful Sites"
+        from_url: https://www.youtube.com/watch?v=Ysr7oNDajJI
+      - url: https://github.com/jakubkrehel/skills/tree/main/skills/interface-review
+        name: interface-review
+        by: "Jakub Krehel"
+        note: "Reviews an interface across UI, typography, layout, colour, writing and accessibility and returns a detailed list of findings to fix."
+        tags: [design-review, ui, accessibility]
+        from: "Insane Claude Design Skills You Need To Actually Build Beautiful Sites"
+        from_url: https://www.youtube.com/watch?v=Ysr7oNDajJI
+      - url: https://github.com/jakubkrehel/skills/tree/main/skills/better-layout
+        name: better-layout
+        by: "Jakub Krehel"
+        note: "Checks and fixes layout details such as grouping, alignment, spacing, reading order and progressive disclosure."
+        tags: [layout, ui, spacing]
+        from: "Insane Claude Design Skills You Need To Actually Build Beautiful Sites"
+        from_url: https://www.youtube.com/watch?v=Ysr7oNDajJI
+      - url: https://github.com/codeswithroh/tastemaker
+        name: tastemaker
+        by: "Rohit Purkait"
+        note: "Grounds generated UI in real reference images by extracting exact design values with scripts and keeping a persistent taste profile, to avoid generic AI defaults."
+        tags: [web-design, ui, design-references, design-system]
+        from: "Insane Claude Design Skills You Need To Actually Build Beautiful Sites"
+        from_url: https://www.youtube.com/watch?v=Ysr7oNDajJI
+      - url: https://github.com/Owl-Listener/designer-skills
+        name: designer-skills
+        by: "MC Dean (Owl-Listener)"
+        note: "Large pack of design skills and commands, installable as Claude Code plugins, covering research, design systems, UI, interaction design, prototyping, design ops and visual critique, many grounded in named design laws."
+        tags: [skill-collection, ux, design-critique, design-system]
+        from: "Insane Claude Design Skills You Need To Actually Build Beautiful Sites"
+        from_url: https://www.youtube.com/watch?v=Ysr7oNDajJI
+      - url: https://github.com/Owl-Listener/designer-skills/tree/main/visual-critique
+        name: visual-critique
+        by: "MC Dean (Owl-Listener)"
+        note: "Plugin that critiques a rendered screen on hierarchy, brand, composition, typography, colour, affordance and information density, then compiles a prioritised fix list (/critique-screen)."
+        tags: [design-critique, ui, ux]
+        from: "Insane Claude Design Skills You Need To Actually Build Beautiful Sites"
+        from_url: https://www.youtube.com/watch?v=Ysr7oNDajJI
+      - url: https://github.com/pbakaus/impeccable
+        name: impeccable
+        by: "Paul Bakaus"
+        note: "Design skill with a set of commands that audit and polish a frontend: hierarchy, spacing, typography, accessibility, empty states and other common weaknesses of AI-generated UI."
+        tags: [web-design, design-review, ui, accessibility]
+        from: "25 Tricks to Level Up Claude Design in 13 Mins"
+        from_url: https://www.youtube.com/watch?v=_SVU3oC4JX8
+      - url: https://github.com/robonuggets/skills/tree/main/tweak
+        name: tweak
+        by: "RoboNuggets"
+        note: "Injects a live slider panel into a single-file HTML page, lets you adjust type, spacing and other values in the browser, then bakes the chosen values back into the source CSS."
+        tags: [html, ui, design-tuning]
+        from: "25 Tricks to Level Up Claude Design in 13 Mins"
+        from_url: https://www.youtube.com/watch?v=_SVU3oC4JX8
+      - url: https://github.com/ifBars/blender-agent-studio
+        name: blender-agent-studio
+        by: "ifBars"
+        note: "Codex plugin with a routing skill and specialist skills for building, validating, animating and rendering Blender scenes and exporting GLB assets."
+        tags: [blender, 3d, modeling]
+        from: "GPT 6 Astra + Blender = INSANE 3D Websites"
+        from_url: https://www.youtube.com/watch?v=RhGiG-yZP-c
+      - url: https://github.com/cth9191/blender-to-web
+        name: blender-to-web
+        by: "Chase AI"
+        note: "Turns a Blender asset into an interactive Three.js website hero (export, live motion, mobile fallbacks, visual checks), with a runnable reference project and prompt library."
+        tags: [blender, threejs, 3d, web-design]
+        from: "GPT 6 Astra + Blender = INSANE 3D Websites"
+        from_url: https://www.youtube.com/watch?v=RhGiG-yZP-c
+      - url: https://github.com/heygen-com/hyperframes
+        name: hyperframes
+        by: "HeyGen"
+        note: "HTML-to-MP4 video framework that ships agent skills behind a /hyperframes router, for scripted motion graphics and explainer videos."
+        tags: [video, motion, html]
+        from: "25 Tricks to Level Up Claude Design in 13 Mins"
+        from_url: https://www.youtube.com/watch?v=_SVU3oC4JX8
   - key: life
     title: Life
     blurb: Trips, shopping, property and learning.
@@ -100,3 +255,17 @@ categories:
         note: My deterministic-boundary library for agent output. Not a skill, but the reference for what an agent may generate versus what code must produce.
       - repo: ComposioHQ/awesome-claude-skills
         note: Curated index of Claude skills and tooling.
+      - url: https://github.com/anthropics/skills/tree/main/skills/skill-creator
+        name: skill-creator
+        by: "Anthropic"
+        note: "Creates new skills, improves existing ones, and runs evals to measure a skill's performance and how reliably its description triggers."
+        tags: [skill-authoring, evaluation, meta]
+        from: "The NEW Agentic OS standard for Claude 5 Models is here (Full Breakdown)"
+        from_url: https://www.youtube.com/watch?v=8NSyI-npJCU
+      - url: https://github.com/mvanhorn/cli-printing-press
+        name: cli-printing-press
+        by: "Matt Van Horn"
+        note: "Generates agent-first command-line tools for an app or API, driven by its /printing-press skills, so an agent gets a connector without an MCP server."
+        tags: [connectors, cli, skill-authoring]
+        from: "The NEW Agentic OS standard for Claude 5 Models is here (Full Breakdown)"
+        from_url: https://www.youtube.com/watch?v=8NSyI-npJCU

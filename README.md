@@ -31,11 +31,16 @@ A single-file, stdlib-only Python CLI (3.7+). It never starts a model session.
 
 | Command | Does |
 |---|---|
-| `up --repo R --machines M [--hook claude\|codex] [--wait]` | match the profile; clone missing checkouts and fetch + fast-forward clean ones in the background; link; register Claude local-scope MCP servers; print one status line (plus `reloadSkills` hook output when links changed) |
+| `up --repo R --machines M [--hook claude\|codex] [--wait]` | match the profile; clone missing checkouts and run the pull flow in the background; link; register Claude local-scope MCP servers; print one status line (plus `reloadSkills` hook output when links changed) |
 | `link` / `unlink --repo R --machines M` | create the enabled links and remove stale ones / remove every link into the checkouts |
-| `doctor --repo R --machines M [--json]` | report profile, links, dangling links, dirty checkouts, last fetch; exit 1 on problems |
+| `doctor --repo R --machines M [--json]` | report profile, links, dangling links, dirty checkouts, shelf, usage, last fetch; exit 1 on problems |
+| `autosync --repo R --machines M` | for a Stop hook: publish every dirty or unpushed checkout with a generated message; exit 2 when the agent must fix a guard hit, lint failure or conflict |
+| `publish --checkout C -m MSG` | lock, guard (public checkout), lint changed skills, commit, rebase if needed, push |
 | `guard [PATH...]` | public-safety scan; exit 2 on hits |
-| `publish --checkout C -m MSG` | lock, guard (public checkout), lint changed skills, commit, push |
+| `find [WORDS...] [--json]` | search core, rarely used and retired skills and the catalog's external links; ranked, with tier and path or URL |
+| `usage --repo R --machines M [--scan] [--json]` | last use of every skill across machines and what `tidy` would do |
+| `tidy --repo R --machines M [--dry-run]` | shelve idle core skills and restore used shelved ones, then push |
+| `shelve` / `restore NAME...` | move skills between `skills/` and `rarely-used/` by hand, then push |
 
 The profile is the `skills` object of the first machine in the registry whose `match` fields all
 equal this host's (`os`, `model`, `hostname` prefix, `wsl`, `user`):
@@ -58,6 +63,32 @@ equal this host's (`os`, `model`, `hostname` prefix, `wsl`, `user`):
 - A Claude Code SessionStart hook can run
   `bin/skills up --repo "$CLAUDE_PROJECT_DIR" --machines <file> --hook claude`.
   `up` never prompts and always exits 0, and it returns in well under a second when nothing changed.
+- A Stop hook can run `bin/skills autosync --repo <repo> --machines <file>` so skill edits commit
+  and push themselves at the end of each turn. The public checkout is guarded and linted first;
+  nothing is pushed past a guard hit.
+
+## Sync and tiers
+
+**Pull flow.** At most every five minutes `up` starts a background sync. For each checkout it
+fetches, then fast-forwards a clean tree, or rebases its local commits onto origin, and pushes
+commits an earlier auto-sync, tidy or usage scan left behind. Unpushed public commits are guarded
+again before they leave. A dirty tree is left to `autosync`, which commits it first.
+
+**Tiers.** Each checkout keeps its skills in two folders:
+
+| Folder | Linked | Holds |
+|---|---|---|
+| `skills/<name>` | yes | the core set |
+| `rarely-used/<name>` | no | skills nobody used for 30 days; found by `find`, readable in place |
+
+Once a day the background sync records which skills this machine's Claude Code and Codex
+transcripts used, in `usage/<machine>.json` in the private checkout. It then runs `tidy`. A core
+skill moves to `rarely-used/` when no machine used it in 30 days, it arrived in core more than 30
+days ago, and there is a month of usage data. Pinned skills (`pinned:` in `catalog.yaml`) and
+skills that a staying skill names in backticks stay put. A shelved skill used again on any machine
+moves back. A use is a Skill tool call, a `/name` or `$name` request, or reading or running the
+skill's own files. Edits, searches, and sessions that touch more than five skills (audits, evals)
+are not uses.
 
 ## Public and private
 
@@ -161,6 +192,28 @@ Elsewhere:
 - [tt-a1i/archify](https://github.com/tt-a1i/archify) — Turns a codebase or a description into interactive architecture and sequence diagrams as self-contained HTML.
 - [nextlevelbuilder/ui-ux-pro-max-skill](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill) — UI and UX guidance for agents building interfaces. Large; its 119-rule usability list is the useful part.
 - [Leonxlnx/taste-skill](https://github.com/Leonxlnx/taste-skill) — Aesthetic judgment for generated frontends.
+- [emilkowalski-skills](https://github.com/emilkowalski/skills) by Emil Kowalski — Collection of design-engineering skills for UI polish and motion: building, reviewing and auditing animations, Apple-style interaction, and an animation glossary. Seen in [Insane Claude Design Skills You Need To Actually Build Beautiful Sites](https://www.youtube.com/watch?v=Ysr7oNDajJI).
+- [emil-design-eng](https://github.com/emilkowalski/skills/tree/main/skills/emil-design-eng) by Emil Kowalski — Encodes Emil Kowalski's approach to UI polish, component design and animation decisions; a starting skill when building a new interface. Seen in [Insane Claude Design Skills You Need To Actually Build Beautiful Sites](https://www.youtube.com/watch?v=Ysr7oNDajJI).
+- [animate](https://github.com/emilkowalski/skills/tree/main/skills/animate) by Emil Kowalski — Builds one animation in a fixed order of decisions (whether to animate, purpose, tool, properties, curve, duration, interruption, exit) and writes the code; use it to add motion to an existing site or app. Seen in [Insane Claude Design Skills You Need To Actually Build Beautiful Sites](https://www.youtube.com/watch?v=Ysr7oNDajJI).
+- [animation-vocabulary](https://github.com/emilkowalski/skills/tree/main/skills/animation-vocabulary) by Emil Kowalski — Glossary that turns a vague description of a motion effect into its exact name, so you can prompt an agent or designer precisely. Seen in [Insane Claude Design Skills You Need To Actually Build Beautiful Sites](https://www.youtube.com/watch?v=Ysr7oNDajJI).
+- [apple-design](https://github.com/emilkowalski/skills/tree/main/skills/apple-design) by Emil Kowalski — Apple's interface and motion principles translated for the web: springs, gestures, drag and sheet interactions, materials, typography and reduced motion. Seen in [Insane Claude Design Skills You Need To Actually Build Beautiful Sites](https://www.youtube.com/watch?v=Ysr7oNDajJI).
+- [garden-skills](https://github.com/ConardLi/garden-skills) by ConardLi — Collection of skills for web design, knowledge-base retrieval, image generation, article layout and web video presentations. Seen in [Insane Claude Design Skills You Need To Actually Build Beautiful Sites](https://www.youtube.com/watch?v=Ysr7oNDajJI).
+- [web-design-engineer](https://github.com/ConardLi/garden-skills/tree/main/skills/web-design-engineer) by ConardLi — Builds or redesigns browser-rendered visual work (pages, dashboards, prototypes, decks) from real design references, and scores an existing design so you can iterate toward a target. Seen in [Insane Claude Design Skills You Need To Actually Build Beautiful Sites](https://www.youtube.com/watch?v=Ysr7oNDajJI).
+- [landing-page-design](https://github.com/elayadesign/ai-design-skills/tree/main/skills/landing-page-design) by Elaya — Single-skill system for conversion-focused landing pages: intake questions, page structure, conversion copy, SEO, and strict visual rules for type, spacing and motion. Seen in [Insane Claude Design Skills You Need To Actually Build Beautiful Sites](https://www.youtube.com/watch?v=Ysr7oNDajJI).
+- [mengto-skills](https://github.com/MengTo/Skills) by Meng To — Collection of agent skills for designers and builders covering web design, UI, 3D, media, game development and agent workflow. Seen in [Insane Claude Design Skills You Need To Actually Build Beautiful Sites](https://www.youtube.com/watch?v=Ysr7oNDajJI).
+- [build-awwwards-quality-sites](https://github.com/MengTo/Skills/tree/main/agent-skills/web-design/build-awwwards-quality-sites) by Meng To — Art-directs and builds motion-rich marketing and landing sites with GSAP choreography, smooth scrolling, scroll storytelling and optional Three.js shaders. Seen in [Insane Claude Design Skills You Need To Actually Build Beautiful Sites](https://www.youtube.com/watch?v=Ysr7oNDajJI).
+- [video-to-superprompt](https://github.com/MengTo/Skills/tree/main/agent-skills/codex/video-to-superprompt) by Meng To — Analyses a screen recording or reference video of a site and writes a detailed prompt for recreating its design, animations and interactions. Seen in [Insane Claude Design Skills You Need To Actually Build Beautiful Sites](https://www.youtube.com/watch?v=Ysr7oNDajJI).
+- [jakubkrehel-skills](https://github.com/jakubkrehel/skills) by Jakub Krehel — Collection of interface skills split by area (layout, typography, colour, accessibility, writing, UI) plus a cross-category review skill. Seen in [Insane Claude Design Skills You Need To Actually Build Beautiful Sites](https://www.youtube.com/watch?v=Ysr7oNDajJI).
+- [interface-review](https://github.com/jakubkrehel/skills/tree/main/skills/interface-review) by Jakub Krehel — Reviews an interface across UI, typography, layout, colour, writing and accessibility and returns a detailed list of findings to fix. Seen in [Insane Claude Design Skills You Need To Actually Build Beautiful Sites](https://www.youtube.com/watch?v=Ysr7oNDajJI).
+- [better-layout](https://github.com/jakubkrehel/skills/tree/main/skills/better-layout) by Jakub Krehel — Checks and fixes layout details such as grouping, alignment, spacing, reading order and progressive disclosure. Seen in [Insane Claude Design Skills You Need To Actually Build Beautiful Sites](https://www.youtube.com/watch?v=Ysr7oNDajJI).
+- [tastemaker](https://github.com/codeswithroh/tastemaker) by Rohit Purkait — Grounds generated UI in real reference images by extracting exact design values with scripts and keeping a persistent taste profile, to avoid generic AI defaults. Seen in [Insane Claude Design Skills You Need To Actually Build Beautiful Sites](https://www.youtube.com/watch?v=Ysr7oNDajJI).
+- [designer-skills](https://github.com/Owl-Listener/designer-skills) by MC Dean (Owl-Listener) — Large pack of design skills and commands, installable as Claude Code plugins, covering research, design systems, UI, interaction design, prototyping, design ops and visual critique, many grounded in named design laws. Seen in [Insane Claude Design Skills You Need To Actually Build Beautiful Sites](https://www.youtube.com/watch?v=Ysr7oNDajJI).
+- [visual-critique](https://github.com/Owl-Listener/designer-skills/tree/main/visual-critique) by MC Dean (Owl-Listener) — Plugin that critiques a rendered screen on hierarchy, brand, composition, typography, colour, affordance and information density, then compiles a prioritised fix list (/critique-screen). Seen in [Insane Claude Design Skills You Need To Actually Build Beautiful Sites](https://www.youtube.com/watch?v=Ysr7oNDajJI).
+- [impeccable](https://github.com/pbakaus/impeccable) by Paul Bakaus — Design skill with a set of commands that audit and polish a frontend: hierarchy, spacing, typography, accessibility, empty states and other common weaknesses of AI-generated UI. Seen in [25 Tricks to Level Up Claude Design in 13 Mins](https://www.youtube.com/watch?v=_SVU3oC4JX8).
+- [tweak](https://github.com/robonuggets/skills/tree/main/tweak) by RoboNuggets — Injects a live slider panel into a single-file HTML page, lets you adjust type, spacing and other values in the browser, then bakes the chosen values back into the source CSS. Seen in [25 Tricks to Level Up Claude Design in 13 Mins](https://www.youtube.com/watch?v=_SVU3oC4JX8).
+- [blender-agent-studio](https://github.com/ifBars/blender-agent-studio) by ifBars — Codex plugin with a routing skill and specialist skills for building, validating, animating and rendering Blender scenes and exporting GLB assets. Seen in [GPT 6 Astra + Blender = INSANE 3D Websites](https://www.youtube.com/watch?v=RhGiG-yZP-c).
+- [blender-to-web](https://github.com/cth9191/blender-to-web) by Chase AI — Turns a Blender asset into an interactive Three.js website hero (export, live motion, mobile fallbacks, visual checks), with a runnable reference project and prompt library. Seen in [GPT 6 Astra + Blender = INSANE 3D Websites](https://www.youtube.com/watch?v=RhGiG-yZP-c).
+- [hyperframes](https://github.com/heygen-com/hyperframes) by HeyGen — HTML-to-MP4 video framework that ships agent skills behind a /hyperframes router, for scripted motion graphics and explainer videos. Seen in [25 Tricks to Level Up Claude Design in 13 Mins](https://www.youtube.com/watch?v=_SVU3oC4JX8).
 
 ### Life
 
@@ -215,6 +268,8 @@ Elsewhere:
 - [multica-ai/andrej-karpathy-skills](https://github.com/multica-ai/andrej-karpathy-skills) — One CLAUDE.md distilled from Karpathy's notes on LLM coding pitfalls.
 - [ong6/groundplane](https://github.com/ong6/groundplane) — My deterministic-boundary library for agent output. Not a skill, but the reference for what an agent may generate versus what code must produce.
 - [ComposioHQ/awesome-claude-skills](https://github.com/ComposioHQ/awesome-claude-skills) — Curated index of Claude skills and tooling.
+- [skill-creator](https://github.com/anthropics/skills/tree/main/skills/skill-creator) by Anthropic — Creates new skills, improves existing ones, and runs evals to measure a skill's performance and how reliably its description triggers. Seen in [The NEW Agentic OS standard for Claude 5 Models is here (Full Breakdown)](https://www.youtube.com/watch?v=8NSyI-npJCU).
+- [cli-printing-press](https://github.com/mvanhorn/cli-printing-press) by Matt Van Horn — Generates agent-first command-line tools for an app or API, driven by its /printing-press skills, so an agent gets a connector without an MCP server. Seen in [The NEW Agentic OS standard for Claude 5 Models is here (Full Breakdown)](https://www.youtube.com/watch?v=8NSyI-npJCU).
 <!-- CATALOG END -->
 
 ## Licence

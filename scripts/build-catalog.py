@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """Regenerate the catalog tables in README.md from catalog.yaml and each SKILL.md's frontmatter.
 
-Run from anywhere: python3 scripts/build-catalog.py. Use --check to verify without writing.
-Exit 1 if metadata is invalid or, in check mode, the generated README has drifted.
+Skills live in `skills/<name>` (core, linked by bin/skills) or `rarely-used/<name>` (unused for a
+month, not linked); both are listed, the second marked. Run from anywhere:
+python3 scripts/build-catalog.py. Use --check to verify without writing. Exit 1 if metadata is
+invalid or, in check mode, the generated README has drifted.
 """
 import argparse
 from collections import Counter
@@ -13,6 +15,9 @@ from pathlib import Path
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
+TIERS = ("skills", "rarely-used")
+SHELF_NOTE = " _(rarely used)_"
+LINK_FIELDS = {"repo", "url", "name", "by", "note", "tags", "from", "from_url"}
 INDEX_START, INDEX_END = "<!-- SKILL INDEX START -->", "<!-- SKILL INDEX END -->"
 START, END = "<!-- CATALOG START -->", "<!-- CATALOG END -->"
 
@@ -82,17 +87,44 @@ def main():
         for link in c.get("links", []):
             if not isinstance(link, dict):
                 sys.exit(f"category {c['key']}: each link must be a mapping")
-            for field in ("repo", "note"):
-                require_text(link.get(field), f"category {c['key']}: link {field}")
+            context = f"category {c['key']}: link {link.get('name') or link.get('repo') or link.get('url')}"
+            unknown = set(link) - LINK_FIELDS
+            if unknown:
+                sys.exit(f"{context}: unknown field(s) {sorted(unknown)}")
+            if bool(link.get("repo")) == bool(link.get("url")):
+                sys.exit(f"{context}: give exactly one of repo or url")
+            if link.get("repo") and not re.fullmatch(r"[\w.-]+/[\w.-]+", str(link["repo"])):
+                sys.exit(f"{context}: repo must be owner/name")
+            if link.get("url") and not str(link["url"]).startswith("https://"):
+                sys.exit(f"{context}: url must start with https://")
+            require_text(link.get("note"), f"{context}: note")
+            for field in ("name", "by", "from"):
+                if field in link:
+                    require_text(link[field], f"{context}: {field}")
+            if "from_url" in link and not str(link["from_url"]).startswith("https://"):
+                sys.exit(f"{context}: from_url must start with https://")
+            if "from_url" in link and "from" not in link:
+                sys.exit(f"{context}: from_url needs from")
+            tags = link.get("tags", [])
+            if not isinstance(tags, list) or any(not isinstance(t, str) or not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", t)
+                                                 for t in tags):
+                sys.exit(f"{context}: tags must be a list of kebab-case words")
     ordered_skills = [s for c in cat["categories"] for s in c.get("skills", [])]
     duplicates = sorted(s for s, count in Counter(ordered_skills).items() if count > 1)
     if duplicates:
         sys.exit(f"skills must appear in exactly one category: {duplicates}")
-    skill_dirs = [p for p in (ROOT / "skills").iterdir() if p.is_dir()]
-    incomplete = sorted(p.name for p in skill_dirs if not (p / "SKILL.md").is_file())
-    if incomplete:
-        sys.exit(f"skill folders missing SKILL.md: {incomplete}")
-    on_disk = {p.name for p in skill_dirs}
+    tier_of = {}
+    for tier in TIERS:
+        base = ROOT / tier
+        skill_dirs = [p for p in base.iterdir() if p.is_dir()] if base.is_dir() else []
+        incomplete = sorted(f"{tier}/{p.name}" for p in skill_dirs if not (p / "SKILL.md").is_file())
+        if incomplete:
+            sys.exit(f"skill folders missing SKILL.md: {incomplete}")
+        for p in skill_dirs:
+            if p.name in tier_of:
+                sys.exit(f"skill {p.name} is in both skills/ and rarely-used/")
+            tier_of[p.name] = tier
+    on_disk = set(tier_of)
     listed = set(ordered_skills)
     summaries = cat.get("skill_summaries", {})
     if not isinstance(summaries, dict) or any(not isinstance(s, str) for s in summaries):
@@ -107,11 +139,20 @@ def main():
 
     for skill, summary in summaries.items():
         require_text(summary, f"summary for {skill}")
-    metadata = {s: frontmatter(ROOT / "skills" / s / "SKILL.md") for s in ordered_skills}
+    pinned = cat.get("pinned", [])
+    if not isinstance(pinned, list) or any(p not in on_disk for p in pinned):
+        sys.exit(f"catalog.yaml: pinned must list skills that exist, got {pinned!r}")
+    if any(tier_of[p] != "skills" for p in pinned):
+        sys.exit("catalog.yaml: a pinned skill must stay in skills/")
+    metadata = {s: frontmatter(ROOT / tier_of[s] / s / "SKILL.md") for s in ordered_skills}
+
+    def entry(s):
+        name, _ = metadata[s]
+        return f"[`{name}`]({tier_of[s]}/{s}/SKILL.md)" + (SHELF_NOTE if tier_of[s] != "skills" else "")
+
     index = ["| Skill | What I use it for |", "|---|---|"]
     for s in ordered_skills:
-        name, _ = metadata[s]
-        index.append(f"| [`{name}`](skills/{s}/SKILL.md) | {cell(summaries[s])} |")
+        index.append(f"| {entry(s)} | {cell(summaries[s])} |")
     index_body = "\n".join(index) + "\n"
 
     out = []
@@ -120,13 +161,19 @@ def main():
         if c.get("skills"):
             out.append("| Skill | Does |\n|---|---|")
             for s in c["skills"]:
-                name, desc = metadata[s]
-                out.append(f"| [`{name}`](skills/{s}/SKILL.md) | {cell(desc)} |")
+                _, desc = metadata[s]
+                out.append(f"| {entry(s)} | {cell(desc)} |")
             out.append("")
         if c.get("links"):
             out.append("Elsewhere:\n")
             for l in c["links"]:
-                out.append(f"- [{l['repo']}](https://github.com/{l['repo']}) — {l['note']}")
+                url = l.get("url") or f"https://github.com/{l['repo']}"
+                label = l.get("name") or l.get("repo") or url
+                seen = ""
+                if l.get("from"):
+                    seen = f" Seen in [{l['from']}]({l['from_url']})." if l.get("from_url") else f" Seen in {l['from']}."
+                by = f" by {l['by']}" if l.get("by") else ""
+                out.append(f"- [{label}]({url}){by} — {' '.join(l['note'].split())}{seen}")
             out.append("")
     body = "\n".join(out).rstrip() + "\n"
 

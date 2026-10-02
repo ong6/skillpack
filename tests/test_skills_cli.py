@@ -12,6 +12,10 @@ import os
 import shutil
 import subprocess
 import sys
+import datetime
+import importlib.machinery
+import importlib.util
+import re
 import tempfile
 import time
 import unittest
@@ -589,6 +593,342 @@ class DoctorTests(Sandbox):
         self.assertEqual(report["checkouts"]["public"]["dirty"], 1)
         self.assertTrue(any("dirty" in p for p in report["problems"]))
         self.assertTrue(any("missing link" in p and "web-extract" in p for p in report["problems"]))
+
+
+
+def load_cli():
+    loader = importlib.machinery.SourceFileLoader("skills_cli", CLI)
+    spec = importlib.util.spec_from_loader("skills_cli", loader)
+    module = importlib.util.module_from_spec(spec)
+    loader.exec_module(module)
+    return module
+
+
+def day(offset, base=None):
+    return ((base or datetime.date.today()) + datetime.timedelta(days=offset)).isoformat()
+
+
+def jsonl(path, records):
+    write(path, "".join(json.dumps(r) + "\n" for r in records))
+
+
+def claude_tool(when, *uses):
+    return {"type": "assistant", "timestamp": when + "T01:00:00Z",
+            "message": {"content": [{"type": "tool_use", "name": n, "input": i} for n, i in uses]}}
+
+
+class YamlTests(unittest.TestCase):
+    def test_subset_parser_matches_pyyaml_on_the_catalogs(self):
+        cli = load_cli()
+        try:
+            import yaml
+        except ImportError:
+            self.skipTest("PyYAML not installed")
+        with open(os.path.join(REPO, "catalog.yaml"), encoding="utf-8") as fh:
+            text = fh.read()
+        self.assertEqual(cli.load_yaml(text), yaml.safe_load(text))
+        sample = ("pinned: [a, 'b, c']\ncats:\n  - key: x  # comment\n    links:\n      - url: https://e.com/#f\n"
+                  "        note: \"Colon: inside\"\n        tags: [ui]\n    skills:\n    - one\n    - two\n")
+        self.assertEqual(cli.load_yaml(sample), yaml.safe_load(sample))
+
+    def test_categories_come_from_flow_and_block_lists(self):
+        cli = load_cli()
+        data = cli.load_yaml("categories:\n  - key: a\n    skills: [x, y]\n  - key: b\n    skills:\n      - z\n")
+        self.assertEqual(cli.catalog_categories(data), {"a": {"x", "y"}, "b": {"z"}})
+        with self.assertRaises(ValueError):
+            cli.load_yaml("a: 1\n   b: 2\n")
+
+
+class AutosyncTests(Sandbox):
+    def setUp(self):
+        super().setUp()
+        self.public_bare = self.make_remote(self.public, "skills")
+        self.private_bare = self.make_remote(self.private, "skills-private")
+        self.write_machines({"root": self.root, "private": True})
+
+    def autosync(self):
+        return self.cli("autosync", "--repo", self.store, "--machines", self.machines)
+
+    def test_dirty_checkouts_commit_with_generated_message_and_push(self):
+        write(os.path.join(self.public, "skills", "handoff", "notes.md"), "More.\n")
+        write(os.path.join(self.private, "skills", "cv", "extra.md"), "Private note.\n")
+        r = self.autosync()
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        for checkout, bare in ((self.public, self.public_bare), (self.private, self.private_bare)):
+            self.assertEqual(self.git(bare, "rev-parse", "main"), self.git(checkout, "rev-parse", "HEAD"))
+            self.assertEqual(self.git(checkout, "status", "--porcelain"), "")
+        self.assertEqual(self.git(self.public, "log", "-1", "--format=%s"), "Update handoff (auto-sync)")
+        quiet = self.autosync()
+        self.assertEqual((quiet.returncode, quiet.stdout, quiet.stderr), (0, "", ""))
+
+    def test_guard_hit_blocks_the_public_checkout_with_exit_2(self):
+        head = self.git(self.public, "rev-parse", "HEAD")
+        self.add_skill(self.public, "leaky", "Mail " + EMAIL + ".\n")
+        write(os.path.join(self.private, "skills", "cv", "extra.md"), "Fine.\n")
+        r = self.autosync()
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("personal-email", r.stderr)
+        self.assertIn("another session's unfinished edit", r.stderr)
+        self.assertEqual(self.git(self.public, "rev-parse", "HEAD"), head)
+        self.assertEqual(self.git(self.private_bare, "rev-parse", "main"), self.git(self.private, "rev-parse", "HEAD"))
+
+    def test_moved_remote_is_rebased_then_pushed(self):
+        other = os.path.join(self.tmp, "other")
+        self.git(self.tmp, "clone", "-q", self.public_bare, other)
+        write(os.path.join(other, "skills", "web-extract", "more.md"), "Remote.\n")
+        self.git(other, "add", "-A")
+        self.git(other, "commit", "-q", "-m", "remote edit")
+        self.git(other, "push", "-q", "origin", "HEAD:main")
+        write(os.path.join(self.public, "skills", "handoff", "notes.md"), "Local.\n")
+        r = self.autosync()
+        self.assertEqual(r.returncode, 0, r.stderr)
+        log = self.git(self.public_bare, "log", "--format=%s", "main")
+        self.assertIn("remote edit", log)
+        self.assertIn("Update handoff (auto-sync)", log)
+
+    def test_conflict_keeps_the_local_commit_and_exits_2(self):
+        other = os.path.join(self.tmp, "other")
+        self.git(self.tmp, "clone", "-q", self.public_bare, other)
+        self.add_skill(other, "handoff", "Remote body.\n")
+        self.git(other, "commit", "-qam", "remote body")
+        self.git(other, "push", "-q", "origin", "HEAD:main")
+        self.add_skill(self.public, "handoff", "Local body.\n")
+        r = self.autosync()
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("conflicts", r.stderr)
+        self.assertEqual(self.git(self.public, "log", "-1", "--format=%s"), "Update handoff (auto-sync)")
+        self.assertFalse(os.path.exists(os.path.join(self.public, ".git", "rebase-merge")))
+
+
+class PullFlowTests(Sandbox):
+    def test_clean_checkout_rebases_local_commits_and_pushes_them(self):
+        bare = self.make_remote(self.public, "skills")
+        other = os.path.join(self.tmp, "other")
+        self.git(self.tmp, "clone", "-q", bare, other)
+        write(os.path.join(other, "skills", "web-extract", "more.md"), "Remote.\n")
+        self.git(other, "add", "-A")
+        self.git(other, "commit", "-q", "-m", "remote edit")
+        self.git(other, "push", "-q", "origin", "HEAD:main")
+        write(os.path.join(self.public, "skills", "handoff", "notes.md"), "Local.\n")
+        self.git(self.public, "add", "-A")
+        self.git(self.public, "commit", "-q", "-m", "local edit")
+        r = self.up("--wait")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(self.git(bare, "rev-parse", "main"), self.git(self.public, "rev-parse", "HEAD"))
+        self.assertEqual(self.git(bare, "log", "--format=%s", "-2", "main").splitlines(), ["local edit", "remote edit"])
+
+    def test_unpushed_commits_that_fail_the_guard_are_not_pushed(self):
+        bare = self.make_remote(self.public, "skills")
+        head = self.git(bare, "rev-parse", "main")
+        self.add_skill(self.public, "leaky", "Mail " + EMAIL + ".\n")
+        self.git(self.public, "add", "-A")
+        self.git(self.public, "commit", "-q", "-m", "leak")
+        r = self.up("--wait")
+        self.assertEqual(r.returncode, 0)
+        self.assertIn("fail the guard", r.stderr)
+        self.assertEqual(self.git(bare, "rev-parse", "main"), head)
+
+
+class TidyRaceTests(Sandbox):
+    def test_a_conflicting_tidy_commit_is_dropped_for_the_upstream_one(self):
+        bare = self.make_remote(self.public, "skills")
+        other = os.path.join(self.tmp, "other")
+        self.git(self.tmp, "clone", "-q", bare, other)
+        self.add_skill(other, "handoff", "Remote body.\n")
+        self.git(other, "commit", "-qam", "remote body")
+        self.git(other, "push", "-q", "origin", "HEAD:main")
+        self.add_skill(self.public, "handoff", "Local body.\n")
+        self.git(self.public, "commit", "-qam", "Shelve handoff (unused 30+ days)")
+        r = self.up("--wait")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(self.git(self.public, "rev-parse", "HEAD"), self.git(bare, "rev-parse", "main"))
+        self.assertEqual(r.stderr, "")
+
+
+class UsageTests(Sandbox):
+    def setUp(self):
+        super().setUp()
+        self.write_machines({"root": self.root, "private": True, "repos": [self.store]})
+        self.projects = os.path.join(self.home, ".claude", "projects")
+        self.slug = re.sub(r"[^A-Za-z0-9]", "-", self.store)
+
+    def usage(self, *extra):
+        r = self.cli("usage", "--repo", self.store, "--machines", self.machines, "--json", *extra)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        return json.loads(r.stdout)
+
+    def test_uses_count_but_edits_searches_mentions_and_maintenance_do_not(self):
+        t = "2026-09-20"
+        jsonl(os.path.join(self.projects, self.slug, "s1.jsonl"), [
+            {"type": "user", "timestamp": t + "T00:00:00Z", "message": {"content": "<command-name>/cv</command-name>"}},
+            claude_tool(t, ("Skill", {"skill": "handoff"}),
+                        ("Read", {"file_path": self.store + "/.claude/skills/web-extract/SKILL.md"}),
+                        ("Bash", {"command": "python3 .claude/skills/youtube-transcript/scripts/get.py URL"}),
+                        ("Edit", {"file_path": ".claude/skills/system-diagram/SKILL.md"}),
+                        ("Grep", {"path": ".claude/skills/feedback-loop/references/x.md"}),
+                        ("Bash", {"command": "cat <<EOF\nRead .claude/skills/where-to-shop/SKILL.md\nEOF"})),
+        ])
+        session = os.path.join(self.projects, self.slug + "-learning-x", "s2")
+        jsonl(session + ".jsonl", [claude_tool(t, ("Skill", {"skill": "system-diagram"}))])
+        for i, name in enumerate(["web-extract", "handoff", "cv", "where-to-shop", "feedback-loop", "youtube-transcript"]):
+            jsonl(os.path.join(session, "subagents", "agent-{}.jsonl".format(i)),
+                  [claude_tool("2026-09-25", ("Read", {"file_path": ".claude/skills/{}/SKILL.md".format(name)}))])
+        jsonl(os.path.join(self.projects, "-elsewhere", "s3.jsonl"), [claude_tool(t, ("Skill", {"skill": "feedback-loop"}))])
+        jsonl(os.path.join(self.home, ".codex", "sessions", "2026", "09", "21", "rollout-1.jsonl"), [
+            {"type": "session_meta", "payload": {"cwd": self.store}},
+            {"type": "response_item", "timestamp": "2026-09-21T01:00:00Z",
+             "payload": {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "use $where-to-shop, costs $5"}]}},
+            {"type": "response_item", "timestamp": "2026-09-22T01:00:00Z",
+             "payload": {"type": "function_call", "name": "exec_command",
+                         "arguments": json.dumps({"cmd": "sed -n 1,80p .agents/skills/feedback-loop/SKILL.md"})}},
+            {"type": "response_item", "timestamp": "2026-09-22T01:00:00Z",
+             "payload": {"type": "custom_tool_call", "name": "apply_patch", "input": "*** Update File: .agents/skills/cv/SKILL.md"}},
+        ])
+        report = self.usage("--scan")
+        last = {n: r["last"] for n, r in report["skills"].items()}
+        self.assertEqual(last["cv"], t)
+        self.assertEqual(last["handoff"], t)
+        self.assertEqual(last["web-extract"], t)
+        self.assertEqual(last["youtube-transcript"], t)
+        self.assertEqual(last["system-diagram"], t)  # explicit use survives the maintenance session
+        self.assertEqual(last["where-to-shop"], "2026-09-21")
+        self.assertEqual(last["feedback-loop"], "2026-09-22")  # Codex read, not the other project
+        path = os.path.join(self.private, "usage", "test-box.json")
+        with open(path) as fh:
+            data = json.load(fh)
+        self.assertEqual(data["machine"], "Test box")
+        self.assertTrue(data["tracked_since"])
+        self.assertEqual(report["machines"], ["Test box"])
+
+    def test_user_scope_reads_every_project_and_rescans_are_incremental(self):
+        self.write_machines({"root": self.root, "private": True, "scope": "user"})
+        jsonl(os.path.join(self.projects, "-elsewhere", "s3.jsonl"), [claude_tool("2026-09-23", ("Skill", {"skill": "cv"}))])
+        self.assertEqual(self.usage("--scan")["skills"]["cv"]["last"], "2026-09-23")
+        jsonl(os.path.join(self.projects, "-elsewhere", "s4.jsonl"), [claude_tool("2026-09-24", ("Skill", {"skill": "cv"}))])
+        report = self.usage("--scan")
+        self.assertEqual(report["skills"]["cv"]["last"], "2026-09-24")
+        self.assertEqual(report["skills"]["cv"]["days_used"], 2)
+
+
+class TidyTests(Sandbox):
+    """Commits are dated today, so SKILLS_TODAY sits 60 days later: every skill is past its grace."""
+
+    def setUp(self):
+        super().setUp()
+        self.public_bare = self.make_remote(self.public, "skills")
+        self.private_bare = self.make_remote(self.private, "skills-private")
+        self.write_machines({"root": self.root, "private": True, "repos": [self.store]})
+        self.today = day(60)
+        self.env["SKILLS_TODAY"] = self.today
+        with open(os.path.join(self.public, "catalog.yaml"), "a") as fh:
+            fh.write("pinned: [feedback-loop]\n")
+        self.add_skill(self.public, "web-extract", "For video pages use the `youtube-transcript` skill.\n")
+        self.git(self.public, "commit", "-qam", "pin and refer")
+        self.git(self.public, "push", "-q")
+
+    def record(self, skills, tracked_offset=-90, machine="other-box"):
+        path = os.path.join(self.private, "usage", machine + ".json")
+        write(path, json.dumps({"machine": machine, "tracked_since": day(60 + tracked_offset),
+                                "skills": {n: [day(60 + o)] for n, o in skills.items()}}))
+        self.git(self.private, "add", "-A")
+        self.git(self.private, "commit", "-q", "-m", "usage")
+        self.git(self.private, "push", "-q")
+
+    def tidy(self, *extra):
+        return self.cli("tidy", "--repo", self.store, "--machines", self.machines, *extra)
+
+    def test_idle_skills_move_to_the_shelf_and_stop_being_linked(self):
+        self.record({"web-extract": -3, "where-to-shop": -40})
+        plan = self.tidy("--dry-run")
+        self.assertEqual(plan.returncode, 0, plan.stderr)
+        shelved = sorted(re.findall(r"^shelve\s+(\S+)", plan.stdout, re.M))
+        self.assertEqual(shelved, ["cv", "handoff", "system-diagram", "where-to-shop"])
+        self.assertTrue(os.path.isdir(os.path.join(self.public, "skills", "system-diagram")))
+        r = self.tidy()
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        for checkout, name in ((self.public, "system-diagram"), (self.public, "handoff"), (self.private, "handoff"),
+                               (self.private, "cv"), (self.private, "where-to-shop")):
+            self.assertTrue(os.path.isfile(os.path.join(checkout, "rarely-used", name, "SKILL.md")), name)
+        for checkout, bare in ((self.public, self.public_bare), (self.private, self.private_bare)):
+            self.assertEqual(self.git(bare, "rev-parse", "main"), self.git(checkout, "rev-parse", "HEAD"))
+        self.assertIn("Shelve", self.git(self.public, "log", "-1", "--format=%s"))
+        self.up()
+        self.assertEqual(sorted(self.store_links()), ["feedback-loop", "web-extract", "youtube-transcript"])
+        found = self.cli("find", "--machines", self.machines, "--json", "system", "diagram")
+        self.assertEqual(json.loads(found.stdout)[0]["tier"], "rarely used")
+
+    def test_a_use_brings_a_shelved_skill_back(self):
+        self.record({"web-extract": -3})
+        self.assertEqual(self.tidy().returncode, 0)
+        self.assertTrue(os.path.isdir(os.path.join(self.public, "rarely-used", "system-diagram")))
+        self.record({"web-extract": -3, "system-diagram": -1}, machine="third-box")
+        r = self.tidy()
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("restore  system-diagram", r.stdout)
+        self.assertTrue(os.path.isfile(os.path.join(self.public, "skills", "system-diagram", "SKILL.md")))
+
+    def test_nothing_moves_without_a_month_of_data_or_inside_the_grace(self):
+        self.record({}, tracked_offset=-10)
+        self.assertIn("nothing to move", self.tidy("--dry-run").stdout)
+        self.record({}, tracked_offset=-90)
+        self.env["SKILLS_TODAY"] = day(0)
+        self.assertIn("nothing to move", self.tidy("--dry-run").stdout)
+
+    def test_background_sync_records_usage_tidies_and_pushes(self):
+        self.record({"web-extract": -3}, tracked_offset=-90)
+        r = self.cli("_sync", "--repo", self.store, "--machines", self.machines,
+                     env={"SKILLS_MAINTAIN_INTERVAL": "0"})
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertTrue(os.path.isdir(os.path.join(self.public, "rarely-used", "system-diagram")))
+        self.assertEqual(self.git(self.public_bare, "rev-parse", "main"), self.git(self.public, "rev-parse", "HEAD"))
+        self.assertTrue(os.path.exists(os.path.join(self.private, "usage", "test-box.json")))
+        self.assertEqual(self.git(self.private_bare, "rev-parse", "main"), self.git(self.private, "rev-parse", "HEAD"))
+
+    def test_shelve_and_restore_by_hand(self):
+        r = self.cli("shelve", "handoff", "--machines", self.machines)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertTrue(os.path.isdir(os.path.join(self.private, "rarely-used", "handoff")))
+        self.assertIn("by hand", self.git(self.private, "log", "-1", "--format=%s"))
+        r = self.cli("restore", "handoff", "nope", "--machines", self.machines)
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("no rarely used skill named nope", r.stderr)
+        self.assertTrue(os.path.isdir(os.path.join(self.private, "skills", "handoff")))
+
+
+class FindTests(Sandbox):
+    def setUp(self):
+        super().setUp()
+        self.write_machines({"root": self.root, "private": True})
+        with open(os.path.join(self.public, "catalog.yaml")) as fh:
+            text = fh.read()
+        text = text.replace(
+            "      - repo: someone/thing\n        note: Elsewhere.\n",
+            "      - url: https://example.com/motion\n        name: motion-kit\n        note: Animate interfaces.\n"
+            "        tags: [motion, animation]\n        from: \"A design video\"\n        from_url: https://example.com/v\n", 1)
+        write(os.path.join(self.public, "catalog.yaml"), text)
+        write(os.path.join(self.private, "archive", "skills", "old-slides", "SKILL.md"),
+              "---\nname: old-slides\ndescription: Build slide decks the old way.\n---\n")
+        os.makedirs(os.path.join(self.public, "rarely-used"))
+        os.rename(os.path.join(self.public, "skills", "system-diagram"), os.path.join(self.public, "rarely-used", "system-diagram"))
+
+    def find(self, *query):
+        return self.cli("find", "--machines", self.machines, *query)
+
+    def test_ranks_names_first_and_labels_each_tier(self):
+        r = self.find("--json", "transcript")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(json.loads(r.stdout)[0]["name"], "youtube-transcript")
+        hits = {e["name"]: e for e in json.loads(self.find("--json", "--limit", "50").stdout)}
+        self.assertEqual(hits["system-diagram"]["tier"], "rarely used")
+        self.assertEqual(hits["old-slides"]["tier"], "retired")
+        self.assertEqual(hits["motion-kit"]["tier"], "external")
+        self.assertEqual(hits["cv"]["kind"], "private")
+        animate = json.loads(self.find("--json", "animation").stdout)
+        self.assertEqual(animate[0]["name"], "motion-kit")
+        self.assertEqual(animate[0]["source"], "A design video")
+        text = self.find("diagram").stdout
+        self.assertIn("rarely used = not linked", text)
+        self.assertEqual(self.find("zebra", "quantum").returncode, 1)
 
 
 if __name__ == "__main__":

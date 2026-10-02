@@ -165,6 +165,48 @@ class CatalogTests(unittest.TestCase):
         (self.root / "skills/incomplete").mkdir()
         self.assertIn("missing SKILL.md", self.assert_rejected_unchanged().stderr)
 
+    def test_rarely_used_skills_are_listed_and_marked(self):
+        shelf = self.root / "rarely-used/idle/SKILL.md"
+        shelf.parent.mkdir(parents=True)
+        shelf.write_text("---\nname: idle\ndescription: Rarely needed.\n---\n")
+        self.catalog["categories"][0]["skills"].append("idle")
+        self.catalog["skill_summaries"]["idle"] = "Idle one."
+        self.write_catalog()
+        self.assertEqual(self.run_cli().returncode, 0)
+        text = self.readme.read_text()
+        self.assertIn("| [`idle`](rarely-used/idle/SKILL.md) _(rarely used)_ | Idle one. |", text)
+        self.assertIn("| [`example`](skills/example/SKILL.md) | One line. |", text)
+        both = self.root / "skills/idle/SKILL.md"
+        both.parent.mkdir()
+        both.write_text("---\nname: idle\ndescription: Rarely needed.\n---\n")
+        self.assertIn("both", self.assert_rejected_unchanged().stderr)
+
+    def test_pinned_skills_must_exist_in_core(self):
+        self.catalog["pinned"] = ["example"]
+        self.write_catalog()
+        self.assertEqual(self.run_cli().returncode, 0)
+        self.catalog["pinned"] = ["absent"]
+        self.write_catalog()
+        self.assertIn("pinned", self.assert_rejected_unchanged().stderr)
+
+    def test_links_take_repo_or_url_with_optional_source(self):
+        links = [{"repo": "someone/thing", "note": "A repo."},
+                 {"url": "https://example.com/skill", "name": "web-skill", "note": "A page.",
+                  "tags": ["design", "ui"], "from": "A video", "from_url": "https://example.com/v"}]
+        self.catalog["categories"][0]["links"] = links
+        self.write_catalog()
+        self.assertEqual(self.run_cli().returncode, 0)
+        text = self.readme.read_text()
+        self.assertIn("- [someone/thing](https://github.com/someone/thing) — A repo.", text)
+        self.assertIn("- [web-skill](https://example.com/skill) — A page. Seen in [A video](https://example.com/v).", text)
+        for bad in ({"note": "Neither."}, {"repo": "a/b", "url": "https://x.y", "note": "Both."},
+                    {"url": "http://x.y", "note": "Not https."}, {"repo": "a/b", "note": "x", "tags": ["Bad Tag"]},
+                    {"repo": "a/b", "note": "x", "colour": "red"}, {"repo": "a/b", "note": "x", "from_url": "https://v"}):
+            with self.subTest(bad=bad):
+                self.catalog["categories"][0]["links"] = [bad]
+                self.write_catalog()
+                self.assert_rejected_unchanged()
+
 
 if __name__ == "__main__":
     unittest.main()
