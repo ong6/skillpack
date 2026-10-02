@@ -2,8 +2,8 @@ name: CI
 
 on:
   push:
-    branches: [main]
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -17,6 +17,31 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install PyYAML
-      - run: python3 scripts/build-catalog.py --check
-      - run: python3 scripts/test-catalog.py
-      - run: bash scripts/test-sync.sh
+      - name: Catalog is in sync with the skills
+        run: python3 scripts/build-catalog.py --check
+      - name: Catalog tests
+        run: python3 scripts/test-catalog.py
+      - name: bin/skills tests
+        run: python3 tests/test_skills_cli.py
+      - name: Public-safety guard
+        run: python3 bin/skills guard skills/ && python3 bin/skills guard .
+      - name: Lint every skill (skillsmith linter, when present)
+        run: |
+          linter=skills/skillsmith/scripts/lint_skill.py
+          if [ ! -f "$linter" ]; then echo "skillsmith linter not present; lint skipped"; exit 0; fi
+          status=0
+          for dir in skills/*/; do
+            [ -f "$dir/SKILL.md" ] || continue
+            python3 "$linter" "$dir" || status=1
+          done
+          exit $status
+
+  cli-python37:
+    # bin/skills must run on the oldest machine (Debian 10, Python 3.7).
+    runs-on: ubuntu-latest
+    container: python:3.7
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 --version && git --version
+      - run: python3 tests/test_skills_cli.py
+      - run: python3 bin/skills guard skills/
