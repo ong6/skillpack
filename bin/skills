@@ -544,12 +544,24 @@ class Plan(object):
         for name in sorted(self.available):
             if any(self.hit(s, name) for s in enable) and not any(self.hit(s, name) for s in disable):
                 self.selected[name] = self.available[name]
+        # Shelved skills get an on-demand stub (callable by name, never loaded into context)
+        # unless a core skill of the same name is linked.
+        shelf = dict(scan(ctx.public, SHELF))
+        if ctx.use_private:
+            shelf.update(scan(ctx.private, SHELF))
+        self.stubbed = {}
+        for name in sorted(shelf):
+            if name in self.available:
+                continue
+            if any(self.hit(s, name) for s in enable) and not any(self.hit(s, name) for s in disable):
+                self.stubbed[name] = shelf[name]
         self.unknown = []
+        known = set(self.available) | set(shelf)
         for s in enable + disable:
             if s.startswith("category:"):
                 if s[len("category:"):] not in self.categories:
                     self.unknown.append(s)
-            elif not any(fnmatch.fnmatchcase(n, s) for n in self.available):
+            elif not any(fnmatch.fnmatchcase(n, s) for n in known):
                 self.unknown.append(s)
 
     def hit(self, selector, name):
@@ -588,11 +600,21 @@ class Owner(object):
         t = link_target(link)
         if t is None:
             return False
-        for cand in (t, canon(t)):
+        return self.inside(t)
+
+    def inside(self, target):
+        for cand in (target, canon(target)):
             for p in self.prefixes:
                 if (cand + os.sep).startswith(p):
                     return True
         return False
+
+    def owns_stub(self, path):
+        """A real folder we generated for a shelved skill: its marker names a skill in a checkout."""
+        if os.path.islink(path) or not os.path.isdir(path):
+            return False
+        marker = read_json(os.path.join(path, STUB_MARKER))
+        return isinstance(marker.get("target"), str) and self.inside(marker["target"])
 
 
 def same_target(link, target):
@@ -603,17 +625,82 @@ def same_target(link, target):
 class LinkResult(object):
     def __init__(self):
         self.added, self.replaced, self.removed = [], [], []
+        self.stubs_added, self.stubs_removed = [], []
         self.conflicts, self.unwritable = [], []
-        self.linked = {}  # link dir -> names linked there
+        self.linked = {}  # link dir -> names linked or stubbed there
 
     @property
     def changed(self):
-        return bool(self.added or self.replaced or self.removed)
+        return bool(self.added or self.replaced or self.removed or self.stubs_added or self.stubs_removed)
 
 
-def sync_dir(d, desired, owner, result, create=True, quiet=False):
-    """Make our links in d equal desired; never touch anything we don't own."""
-    if desired and create and not os.path.isdir(d):
+# ----------------------------------------------------------------------------------------- stubs
+#
+# A shelved skill is not linked. Instead its link folder holds a small generated stub that names
+# the real folder. Claude Code gets `disable-model-invocation: true` (listed under `/`, never in
+# the model's context); Codex gets `allow_implicit_invocation: false` (runs only when named with
+# `$`). Calling one reads the real SKILL.md, which counts as a use, so the next tidy restores it.
+
+STUB_MARKER = ".skills-stub.json"
+STUB_VERSION = 1
+DESCRIPTION_LIMIT = 1024
+
+
+def stub_flavour(link_dir):
+    return "codex" if os.sep + ".agents" + os.sep in link_dir + os.sep else "claude"
+
+
+def stub_files(name, target, flavour):
+    """{relative path: text} for one stub."""
+    fields, _ = frontmatter(os.path.join(target, "SKILL.md"))
+    lead = "Rarely used; runs only when called by name. "
+    description = lead + " ".join(str(fields.get("description") or name).split())
+    if len(description) > DESCRIPTION_LIMIT:
+        description = description[:DESCRIPTION_LIMIT - 3].rstrip() + "..."
+    head = ["---", "name: " + name, "description: " + json.dumps(description, ensure_ascii=False)]
+    if flavour == "claude":
+        head.append("disable-model-invocation: true")
+    body = [
+        "---", "", "# {} (rarely used)".format(name), "",
+        "Nobody used this skill for {} days, so it is shelved and only this stub is installed.".format(IDLE_DAYS),
+        "Read `{}` now and follow it as the skill. Paths in it are".format(os.path.join(target, "SKILL.md")),
+        "relative to `{}`. Using it moves it back to the core set at the next daily tidy.".format(target), ""]
+    files = {"SKILL.md": "\n".join(head + body)}
+    if flavour == "codex":
+        files[os.path.join("agents", "openai.yaml")] = "policy:\n  allow_implicit_invocation: false\n"
+    marker = {"version": STUB_VERSION, "target": target, "flavour": flavour,
+              "sha256": hashlib.sha256(json.dumps(files, sort_keys=True).encode("utf-8")).hexdigest()}
+    files[STUB_MARKER] = json.dumps(marker, sort_keys=True) + "\n"
+    return files
+
+
+def stub_current(path, files):
+    return read_json(os.path.join(path, STUB_MARKER)) == json.loads(files[STUB_MARKER])
+
+
+def write_stub(path, files):
+    """Create or replace a stub folder atomically enough: build beside it, then swap."""
+    tmp = path + ".skills-tmp"
+    shutil.rmtree(tmp, ignore_errors=True)
+    for rel, text in files.items():
+        full = os.path.join(tmp, rel)
+        os.makedirs(os.path.dirname(full), exist_ok=True)
+        with open(full, "w", encoding="utf-8") as fh:
+            fh.write(text)
+    if os.path.isdir(path) and not os.path.islink(path):
+        old = path + ".skills-old"
+        shutil.rmtree(old, ignore_errors=True)
+        os.rename(path, old)
+        os.rename(tmp, path)
+        shutil.rmtree(old, ignore_errors=True)
+    else:
+        os.rename(tmp, path)
+
+
+def sync_dir(d, desired, owner, result, create=True, quiet=False, stubs=None):
+    """Make our links (and shelved-skill stubs) in d equal desired; never touch anything we don't own."""
+    stubs = stubs or {}
+    if (desired or stubs) and create and not os.path.isdir(d):
         try:
             os.makedirs(d)
         except OSError:
@@ -625,16 +712,20 @@ def sync_dir(d, desired, owner, result, create=True, quiet=False):
         names = sorted(os.listdir(d))
     except OSError:
         return
-    ours = [n for n in names if os.path.islink(os.path.join(d, n)) and owner.owns(os.path.join(d, n))]
-    pending = [n for n in ours if n not in desired]
+    flavour = stub_flavour(d)
+    wanted = {n: stub_files(n, t, flavour) for n, t in stubs.items()}
+    our_links = [n for n in names if os.path.islink(os.path.join(d, n)) and owner.owns(os.path.join(d, n))]
+    our_stubs = [n for n in names if owner.owns_stub(os.path.join(d, n))]
+    pending = [n for n in our_links if n not in desired] + [n for n in our_stubs if n not in wanted]
     pending += [n for n in desired if not (os.path.islink(os.path.join(d, n))
                                            and same_target(os.path.join(d, n), desired[n]))]
+    pending += [n for n in wanted if not stub_current(os.path.join(d, n), wanted[n])]
     if pending and not os.access(d, os.W_OK):
         if not quiet:
             result.unwritable.append(d)
         return
     linked = result.linked.setdefault(d, [])
-    for name in ours:
+    for name in our_links:
         if name in desired:
             continue
         try:
@@ -642,8 +733,15 @@ def sync_dir(d, desired, owner, result, create=True, quiet=False):
             result.removed.append(os.path.join(d, name))
         except OSError:
             pass
+    for name in our_stubs:
+        if name in wanted:
+            continue
+        shutil.rmtree(os.path.join(d, name), ignore_errors=True)
+        result.stubs_removed.append(os.path.join(d, name))
     for name, target in sorted(desired.items()):
         path = os.path.join(d, name)
+        if owner.owns_stub(path):  # shelved skill came back: the stub gives way to the link
+            shutil.rmtree(path, ignore_errors=True)
         if os.path.islink(path):
             if same_target(path, target):
                 linked.append(name)
@@ -673,6 +771,25 @@ def sync_dir(d, desired, owner, result, create=True, quiet=False):
                     linked.append(name)
                 else:
                     result.conflicts.append(path)
+    for name, files in sorted(wanted.items()):
+        path = os.path.join(d, name)
+        if os.path.islink(path) and owner.owns(path):  # skill was shelved: the link gives way
+            try:
+                os.unlink(path)
+            except OSError:
+                pass
+        if stub_current(path, files):
+            linked.append(name)
+            continue
+        if os.path.lexists(path) and not owner.owns_stub(path):
+            result.conflicts.append(path)
+            continue
+        try:
+            write_stub(path, files)
+            result.stubs_added.append(path)
+            linked.append(name)
+        except OSError:
+            result.conflicts.append(path)
 
 
 def write_exclude(repo, entries):
@@ -714,7 +831,7 @@ def do_link(ctx, plan=None):
     with file_lock(stamp("link.lock"), timeout=5):
         if ctx.scope == "project":
             for d in ctx.repo_dirs:
-                sync_dir(d, plan.selected, owner, result)
+                sync_dir(d, plan.selected, owner, result, stubs=plan.stubbed)
             for d in ctx.guard_home_dirs:  # scope guard
                 sync_dir(d, {}, owner, result, create=False, quiet=True)
             for repo in ctx.live_repos:
@@ -725,7 +842,7 @@ def do_link(ctx, plan=None):
                 write_exclude(repo, entries)
         else:
             for d in ctx.home_dirs:
-                sync_dir(d, plan.selected, owner, result)
+                sync_dir(d, plan.selected, owner, result, stubs=plan.stubbed)
             for d in ctx.repo_dirs:
                 if d not in ctx.home_dirs:
                     sync_dir(d, {}, owner, result, create=False, quiet=True)
@@ -1497,13 +1614,17 @@ def maintain_checkouts(ctx):
 # -------------------------------------------------------------------------------- up / link / ...
 
 def status_line(ctx, plan, result, mcp):
-    parts = ["skills: {} linked ({})".format(len(plan.selected), ctx.where)]
+    parts = ["skills: {} linked{} ({})".format(
+        len(plan.selected), " + {} on call".format(len(plan.stubbed)) if plan.stubbed else "", ctx.where)]
     fetched = mtime(stamp("fetched"))
     parts.append("fetched " + ago(fetched) if fetched else "never fetched")
     if result.changed:
         added = set(os.path.basename(p) for p in result.added + result.replaced)
         removed = set(os.path.basename(p) for p in result.removed) - added
         parts.append("{} added, {} removed".format(len(added), len(removed)))
+        stubbed = set(os.path.basename(p) for p in result.stubs_added)
+        if stubbed:
+            parts.append("{} stub(s) written".format(len(stubbed)))
     if plan.overrides:
         parts.append("private overrides public: " + ", ".join(plan.overrides))
     if result.conflicts:
@@ -1552,8 +1673,10 @@ def cmd_link(args):
     plan, result = do_link(ctx)
     for path in result.added + result.replaced:
         say("linked   " + short(path))
-    for path in result.removed:
+    for path in result.removed + result.stubs_removed:
         say("removed  " + short(path))
+    for path in result.stubs_added:
+        say("stub     " + short(path))
     for path in result.conflicts:
         say("conflict " + short(path) + " (not ours; left alone)", sys.stderr)
     for name in plan.overrides:
@@ -1565,9 +1688,9 @@ def cmd_link(args):
 def cmd_unlink(args):
     ctx = Context(args)
     result = do_unlink(ctx)
-    for path in result.removed:
+    for path in result.removed + result.stubs_removed:
         say("removed  " + short(path))
-    say("skills: {} link(s) removed".format(len(result.removed)))
+    say("skills: {} link(s) and {} stub(s) removed".format(len(result.removed), len(result.stubs_removed)))
     return 1 if result.unwritable else 0
 
 
@@ -1648,6 +1771,17 @@ def cmd_doctor(args):
             problems.append("{}: dangling link(s): {}".format(short(d), ", ".join(entry["dangling"])))
         if entry["stale"]:
             problems.append("{}: stale link(s): {}".format(short(d), ", ".join(entry["stale"])))
+        flavour = stub_flavour(d)
+        entry["stubs_ok"], entry["stubs_missing"] = 0, []
+        for name, target in sorted(plan.stubbed.items()):
+            path = os.path.join(d, name)
+            if owner.owns_stub(path) and stub_current(path, stub_files(name, target, flavour)):
+                entry["stubs_ok"] += 1
+            else:
+                entry["stubs_missing"].append(name)
+        if entry["stubs_missing"]:
+            problems.append("{}: missing or outdated stub(s) for rarely used skills: {}".format(
+                short(d), ", ".join(entry["stubs_missing"])))
         if (entry["missing"] or entry["stale"] or entry["dangling"]) and os.path.isdir(d) \
                 and not os.access(d, os.W_OK):
             problems.append("{} is not writable".format(short(d)))
@@ -1655,7 +1789,8 @@ def cmd_doctor(args):
         if not os.path.isdir(d):
             continue
         leaked = [n for n in sorted(os.listdir(d))
-                  if os.path.islink(os.path.join(d, n)) and owner.owns(os.path.join(d, n))]
+                  if (os.path.islink(os.path.join(d, n)) and owner.owns(os.path.join(d, n)))
+                  or owner.owns_stub(os.path.join(d, n))]
         if leaked:
             problems.append("{} scope, but {} holds our links: {}".format(ctx.scope, short(d), ", ".join(leaked)))
     for selector in plan.unknown:
@@ -1702,7 +1837,8 @@ def cmd_doctor(args):
             len(report["usage"]["machines"]), report["usage"]["tracked_since"] or "never",
             ago(report["maintained"])))
     for d, entry in sorted(report["links"].items()):
-        say("links    {}: {} ok".format(short(d), entry["ok"]))
+        say("links    {}: {} ok{}".format(short(d), entry["ok"],
+                                         ", {} stub(s) ok".format(entry["stubs_ok"]) if plan.stubbed else ""))
     for name in plan.overrides:
         say("note     private {} overrides public {}".format(name, name))
     say("fetch    " + ("fetched " + ago(fetched) if fetched else "never fetched"))
