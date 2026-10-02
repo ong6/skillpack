@@ -3,3 +3,5 @@ __pycache__/
 .venv/
 .firecrawl/
 .DS_Store
+.skill-evals/
+.evals/

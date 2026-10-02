@@ -144,6 +144,23 @@ class CatalogTests(unittest.TestCase):
         self.skill.write_text("---\nname: wrong\nname: example\ndescription: Fine.\n---\n")
         self.assertIn("duplicate mapping key", self.assert_rejected_unchanged().stderr)
 
+    def test_empty_categories_render_and_skills_can_be_added_later(self):
+        self.catalog["categories"].append({"key": "later", "title": "Later", "blurb": "Arrives later.",
+                                           "skills": [], "links": []})
+        self.write_catalog()
+        self.assertEqual(self.run_cli().returncode, 0)
+        self.assertIn("### Later\n\n_Arrives later._\n", self.readme.read_text())
+        added = self.root / "skills/added/SKILL.md"
+        added.parent.mkdir()
+        added.write_text("---\nname: added\ndescription: Added later.\n---\n")
+        self.assert_rejected_unchanged("--check")
+        self.catalog["categories"][-1]["skills"] = ["added"]
+        self.catalog["skill_summaries"]["added"] = "Added later."
+        self.write_catalog()
+        self.assertEqual(self.run_cli().returncode, 0)
+        self.assertEqual(self.run_cli("--check").returncode, 0)
+        self.assertIn("[`added`](skills/added/SKILL.md) | Added later.", self.readme.read_text())
+
     def test_incomplete_skill_folder_rejected(self):
         (self.root / "skills/incomplete").mkdir()
         self.assertIn("missing SKILL.md", self.assert_rejected_unchanged().stderr)
