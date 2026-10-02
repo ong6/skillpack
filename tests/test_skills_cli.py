@@ -985,7 +985,7 @@ class FindTests(Sandbox):
         self.assertEqual(animate[0]["name"], "motion-kit")
         self.assertEqual(animate[0]["source"], "A design video")
         text = self.find("diagram").stdout
-        self.assertIn("rarely used = not linked", text)
+        self.assertIn("rarely used = not loaded until called", text)
         self.assertEqual(self.find("zebra", "quantum").returncode, 1)
         cli = load_cli()
         self.assertTrue(cli.term_hits("planning", "Plan or replan a trip"))
