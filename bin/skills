@@ -2256,12 +2256,23 @@ def query_terms(words):
     return terms
 
 
+def stem(word):
+    for suffix in ("ings", "ions", "ing", "ion", "ers", "er", "ed", "es", "s"):
+        if word.endswith(suffix) and len(word) - len(suffix) >= 3:
+            word = word[:-len(suffix)]
+            break
+    if len(word) > 3 and word[-1] == word[-2] and word[-1] not in "aeiouls":
+        word = word[:-1]  # planning -> plann -> plan
+    return word
+
+
 def term_hits(term, text):
-    text = text.lower().replace("-", " ")
-    if len(term) >= 4:
-        stem = term[:-1] if term.endswith("s") else term
-        return stem in text
-    return re.search(r"\b" + re.escape(term) + r"s?\b", text) is not None
+    """A word of the text starts with the term's stem ("plan" finds "planner", not "groundplane")."""
+    words = re.findall(r"[a-z0-9]+", text.lower())
+    if len(term) < 4:
+        return any(w == term or w == term + "s" for w in words)
+    root = stem(term)
+    return any(w.startswith(root) for w in words)
 
 
 def score_entry(entry, terms, phrase):
@@ -2293,7 +2304,8 @@ def cmd_find(args):
     phrase = " ".join(args.query).strip().lower()
     if terms:
         ranked = [(score_entry(e, terms, phrase), e) for e in entries]
-        ranked = [(sc, e) for sc, e in ranked if sc > 0]
+        top = max([sc for sc, _ in ranked] or [0])
+        ranked = [(sc, e) for sc, e in ranked if sc > 0 and sc >= top * 0.3]  # drop stragglers
     else:
         ranked = [(0, e) for e in entries]
     ranked.sort(key=lambda t: (-t[0], TIER_ORDER[t[1]["tier"]], t[1]["name"]))
@@ -2307,6 +2319,8 @@ def cmd_find(args):
         return 1
     if terms:
         say("{} of {} match(es) for {!r}:".format(len(shown), len(ranked), phrase))
+        if shown[0][0] < 4:
+            say("only weak word matches: nothing names this job; read before trusting any of them")
     for sc, e in shown:
         where = short(e["where"]) if e["tier"] != "external" else e["where"]
         label = TIER_LABEL[e["tier"]] + ("" if e["tier"] == "external" else ", " + e["kind"])

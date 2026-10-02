@@ -929,6 +929,11 @@ class FindTests(Sandbox):
         text = self.find("diagram").stdout
         self.assertIn("rarely used = not linked", text)
         self.assertEqual(self.find("zebra", "quantum").returncode, 1)
+        cli = load_cli()
+        self.assertTrue(cli.term_hits("planning", "Plan or replan a trip"))
+        self.assertTrue(cli.term_hits("decks", "a deck reviewer"))
+        self.assertFalse(cli.term_hits("plan", "ong6/groundplane library"))
+        self.assertFalse(cli.term_hits("ui", "build the suite"))
 
 
 if __name__ == "__main__":
