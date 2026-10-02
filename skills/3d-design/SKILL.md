@@ -53,7 +53,7 @@ For a recommendation or audit, lead with four explicit fields: **Route**, **Firs
 **Fallback**, and **Release checks**. Keep proposed work separate from results actually rendered or
 measured; never imply that an asset, browser path, or device budget passed when it was not run.
 
-When Blender is selected, read [blender-authoring](../blender-authoring/SKILL.md). For any
+When Blender is selected, load the `blender-authoring` skill. For any
 loop, coordinated character action or continuous pan, read [animation.md](animation.md) before
 implementation. It defines contact, timeline, loop-boundary and player checks. Keep tool selection
 here; use the companion for Blender execution details.

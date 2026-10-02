@@ -1,0 +1,4 @@
+interface:
+  display_name: "Create FDE deck"
+  short_description: "Evidence-labelled discovery, architecture and pilot decks"
+  default_prompt: "Use $create-fde-deck to turn these notes into a decision-ready customer deck."

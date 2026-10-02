@@ -25,8 +25,8 @@ owner never repeats feedback and never maintains the log.
 3. **Apply it.** Edit the target now. Do not ask permission for in-repo edits. Do not add a
    "feedback" section to a skill; fold the change into the step it affects. If the new feedback
    contradicts an earlier entry, apply the new one and mark the old entry `superseded`.
-4. **Verify.** Run the repo's skill validator (`.agents/sync-skills.sh --check` in the store) after
-   a skill edit, the hook tests after a hook edit. A failing check means go back to step 3.
+4. **Verify.** Run the repo's skill validator (the `skillsmith` linter, or whatever check the repo's
+   agent manual names) after a skill edit, the hook tests after a hook edit. A failing check means go back to step 3.
 5. **Log it** in `feedback.md` at the repo root, appended in date order. Create the file from the
    skeleton below if it is missing. Never rewrite or delete earlier entries.
 6. **Reply in one or two lines:** what changed and the absolute path of the file.
@@ -65,17 +65,9 @@ Add the repo's usual frontmatter above the heading if its notes require one.
 | Ask "should I update the skill?" | Update it. Feedback is the instruction. |
 | Log a one-off ("use the other branch this time") as a rule | Log it with `About: none`, change nothing. |
 
-## Keeping this skill in sync across repos and machines
+## Where edits land
 
-This skill ships in the [`ong6/skillpack`](https://github.com/ong6/skillpack) collection, which host repos
-install as a `git subtree`. The collection's `scripts/sync.sh` moves changes both ways and is wired
-into the host repo's hooks:
-
-- `--start` at SessionStart: merges what the last background fetch brought in, then fetches again
-  in the background. No network on the startup path except the first run on a clone.
-- `--stop` at Stop: if this folder changed locally since the last sync, merges upstream first, then
-  pushes. Exit 2 on a merge conflict, with the resolve command in the message.
-- `--status` prints the sync state. Run `scripts/test-sync.sh` after editing the script.
-
-Edits to any skill in the collection, made in any repo that uses it, reach every other one on their
-next session. Edit in place; never keep a second copy.
+This skill ships in the public [`ong6/skills`](https://github.com/ong6/skills) collection and is
+linked into each host repo, so an edit made through the link changes the shared checkout. Commit
+and push that checkout the way its README says, after the guard and linter pass. Edit in place;
+never keep a second copy.

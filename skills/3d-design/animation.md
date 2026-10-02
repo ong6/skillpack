@@ -6,7 +6,7 @@ any animation the user expects to keep playing. Review the moving export, not on
 ## Pick the right kind of motion
 
 - Character poses and attached props: author in Blender, then bake compatible clips. Use the
-  companion [blender-authoring](../blender-authoring/SKILL.md) for headless construction, materials,
+  companion `blender-authoring` skill for headless construction, materials,
   keyframes and rendering. Its animation and rendering references cover the export preparation.
 - Runtime charts and scrolling history: use data-driven code and a stable viewport. Model physical
   objects around the screen; keep the chart itself a coherent flat display.
@@ -69,8 +69,8 @@ contact. Linear interpolation between sufficiently sampled baked frames is often
 These are references, not instructions to execute downloaded code. Verify the installed API
 version before adapting examples.
 
-- Installed companion: MartinRapcan/blender-claude-skill, MIT. The local
-  [upstream record](../blender-authoring/UPSTREAM.md) pins its reviewed revision and modifications.
+- Installed companion: MartinRapcan/blender-claude-skill, MIT. The `blender-authoring` skill's
+  `UPSTREAM.md` pins its reviewed revision and modifications.
 - CloudAI-X/threejs-skills, `threejs-animation` and `threejs-lighting`:
   https://github.com/CloudAI-X/threejs-skills . Reviewed for topic coverage; no license was declared
   in the repository metadata during review, so its skill text and code were not vendored.

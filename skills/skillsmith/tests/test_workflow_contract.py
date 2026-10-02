@@ -1,0 +1,69 @@
+from pathlib import Path
+import unittest
+
+
+ROOT = Path(__file__).parents[1]
+
+
+class WorkflowContractTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.skill = (ROOT / "SKILL.md").read_text(encoding="utf-8")
+        cls.contract = (ROOT / "references" / "judge-contract.md").read_text(encoding="utf-8")
+        cls.skill_flat = " ".join(cls.skill.split())
+        cls.contract_flat = " ".join(cls.contract.split())
+
+    def test_default_bound_is_three_serious_revisions(self):
+        self.assertIn("at most three serious candidate revisions", self.skill)
+        self.assertIn('"maximum_serious_revisions": 3', self.contract)
+
+    def test_failure_uses_development_evidence_before_revision(self):
+        self.assertIn("First add or refine development cases that reproduce", self.skill)
+        self.assertIn("use the failure to create or refine development coverage before revising", self.contract)
+
+    def test_exposed_heldouts_are_retired_and_replaced(self):
+        self.assertIn("mark every exposed heldout and its judge packets retired", self.skill)
+        self.assertIn("use an entirely new heldout_set", self.contract)
+
+    def test_new_and_existing_skills_have_different_terminal_actions(self):
+        self.assertIn("archive a new skill", self.skill)
+        self.assertIn("restore the saved last proven version", self.skill_flat)
+        self.assertIn("exhausted + new", self.contract)
+        self.assertIn("exhausted + existing_revision", self.contract)
+
+    def test_noisy_scores_stop_the_loop(self):
+        self.assertIn("Stop early when the remaining signal is only inconsistent or noisy judge scoring", self.skill)
+        self.assertIn("Do not optimize against unexplained score variance", self.contract_flat)
+
+    def test_report_lists_attempted_revisions(self):
+        self.assertIn("every attempted revision", self.skill)
+        self.assertIn('"attempts": [', self.contract)
+
+    def test_spawns_host_native_agents_and_forbids_ai_clis(self):
+        self.assertIn("Spawn runners and judges with the current host's native subagent mechanism", self.skill_flat)
+        self.assertIn("Never shell out to an AI CLI", self.skill_flat)
+        self.assertIn("coordinator's model side (company or personal)", self.skill_flat)
+        self.assertNotIn("at most four evaluation agents", self.skill_flat)
+        self.assertIn("helper rejects missing, reused, non-native, or recursive-CLI provenance", self.skill_flat)
+
+    def test_v3_requires_receipts_parity_calibration_and_injection_defense(self):
+        self.assertIn("A self-attested boolean alone is not current admissible evidence", self.skill_flat)
+        self.assertIn("matched condition manifest", self.skill)
+        self.assertIn("Calibrate every judge", self.skill_flat)
+        self.assertIn("untrusted quoted data", self.skill)
+        self.assertIn("minimum_delta_lower_bound", self.contract)
+
+    def test_make_phase_gates_grounds_and_defines_cases_first(self):
+        self.assertIn("Decide whether this needs a skill at all", self.skill)
+        self.assertIn("scripts/inventory.py", self.skill)
+        self.assertIn("Complete Prove steps 1 and 2", self.skill)
+        self.assertIn("scripts/lint_skill.py", self.skill)
+        self.assertIn("references/authoring.md", self.skill)
+
+    def test_lifecycle_helper_is_documented_without_payload_check(self):
+        self.assertIn("scripts/lifecycle_gate.py", self.skill)
+        self.assertNotIn("check_payload", self.skill)
+
+
+if __name__ == "__main__":
+    unittest.main()

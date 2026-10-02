@@ -10,8 +10,8 @@ description: >-
 
 # Blender scripting (bpy)
 
-For tool selection and web integration, use [3d-design](../3d-design/SKILL.md).
-For loops and exported playback, follow its [animation review](../3d-design/animation.md).
+For tool selection and web integration, use the `3d-design` skill.
+For loops and exported playback, follow its animation review (`animation.md` in that skill).
 
 Blender is driven from Python through the `bpy` module. The reliable way to produce
 3D/2D assets, materials, lighting, and animation from a prompt is to **write a
@@ -22,10 +22,12 @@ separate scripts that actually work from ones that silently produce garbage
 
 ## Live Blender (MCP)
 
-If the project's `.mcp.json` defines a `blender` server, it is parked off by default to save
-context. For work on a scene open in Blender (inspect, edit live, screenshot), run
-`python3 scripts/mcp_toggle.py on` from this skill's folder; the server connects mid-session.
-Run `off` when the Blender work ends. Headless batch jobs below don't need it.
+The `blender` MCP server stays off by default to save context. For work on a scene open in
+Blender (inspect, edit live, screenshot), run `python3 <this skill's folder>/scripts/mcp_toggle.py on`
+**from the project root**. With a `blender` entry in the project's `.mcp.json` it connects
+mid-session; otherwise it registers a local-scope server (kept in `~/.claude.json`, not the repo),
+which connects after `/mcp` or a new session. Run `off` when the Blender work ends. Headless batch
+jobs below don't need it.
 
 ## The one rule that matters most: prefer data-API over operators
 

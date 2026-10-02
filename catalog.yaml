@@ -12,12 +12,27 @@ skill_summaries:
   handoff: Leave a compact continuation brief for the next agent or session.
   feedback-loop: Record feedback and patch the skill or rule that caused it in the same session.
   refine: Review and improve the work until its constraints and requested score pass.
+  save-video: File a YouTube video as a searchable note with takeaways, category and tags.
+  datastore: Keep structured records as append-only JSONL with a local SQLite cache for SQL.
+  write-a-brief: Write or tighten a one-to-two-page brief for a meeting with a professional.
+  review-a-quote: Review a vendor or construction quote line by line and separate what to ask now.
+  ux-design: Audit or design a page's UX against a usability checklist before visual polish.
+  trip-planner: Plan or replan a trip with live research on routes, hours, parking and food.
+  product-shopping: Decide what to buy, or find the best legitimate price for a chosen model.
+  compare-price: Compare one product's landed cost across countries in a single currency.
+  evaluate-condo: Evaluate a Singapore condo listing or development and file a cited verdict.
+  teach: Run a stateful, multi-session course on a topic in a learning workspace.
+  interview-prep: Mock interviews from your own resume, with spoken-plan grading, drills, debriefs, system design.
+  create-fde-deck: "Write evidence-labelled field-engineering decks: discovery, architecture, pilot readout."
+  review-fde-deck: Audit a field-engineering deck for logic, evidence, honesty, density and next steps.
+  track-pilot-evidence: Track pilot criteria, evidence and risks where agents propose and humans decide.
+  skillsmith: Make a skill from the repo, then keep it only if it beats the same model without it.
 
 categories:
   - key: research
     title: Research
     blurb: Getting text and data out of the web and video.
-    skills: [web-extract, youtube-transcript]
+    skills: [web-extract, youtube-transcript, save-video, datastore]
     links:
       - repo: firecrawl/firecrawl-claude-plugin
         note: Firecrawl's official plugin. web-extract wraps the same CLI.
@@ -28,7 +43,7 @@ categories:
   - key: writing
     title: Writing
     blurb: How replies, briefs and documents read, and how sessions hand off.
-    skills: [refine, handoff, markdown-to-pdf]
+    skills: [refine, handoff, write-a-brief, review-a-quote, markdown-to-pdf]
     links:
       - repo: JuliusBrussee/caveman
         note: Compressed "caveman" prose for agents; cuts output tokens by about two thirds while keeping code and commands exact.
@@ -39,7 +54,7 @@ categories:
   - key: design
     title: Design
     blurb: Diagrams, interfaces, 3D and visual judgment.
-    skills: [system-diagram, 3d-design, blender-authoring]
+    skills: [system-diagram, ux-design, 3d-design, blender-authoring]
     links:
       - repo: tt-a1i/archify
         note: Turns a codebase or a description into interactive architecture and sequence diagrams as self-contained HTML.
@@ -50,24 +65,24 @@ categories:
   - key: life
     title: Life
     blurb: Trips, shopping, property and learning.
-    skills: []
+    skills: [trip-planner, product-shopping, compare-price, evaluate-condo, teach]
     links: []
   - key: career
     title: Career
     blurb: Interview drilling and job-search practice.
-    skills: []
+    skills: [interview-prep]
     links:
       - repo: kirilxd/swe-interview-coach
         note: Behavioural and system-design prep for Claude Code.
   - key: field-engineering
     title: Field engineering
     blurb: Customer-facing decks and pilot evidence for forward-deployed work.
-    skills: []
+    skills: [create-fde-deck, review-fde-deck, track-pilot-evidence]
     links: []
   - key: skill-building
     title: Skill building
     blurb: Making, testing and improving the skills themselves.
-    skills: [feedback-loop]
+    skills: [skillsmith, feedback-loop]
     links:
       - repo: anthropics/skills
         note: The official reference set and the Agent Skills spec.

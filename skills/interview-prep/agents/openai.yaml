@@ -1,0 +1,4 @@
+interface:
+  display_name: "Interview prep"
+  short_description: "Resume-grounded mocks, graded DSA reps and debriefs"
+  default_prompt: "Use $interview-prep to run a mock interview or the next due DSA rep."

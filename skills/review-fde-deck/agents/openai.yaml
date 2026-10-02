@@ -1,0 +1,4 @@
+interface:
+  display_name: "Review FDE deck"
+  short_description: "Audit a deck's logic, evidence, density and ask"
+  default_prompt: "Use $review-fde-deck to review this deck before it goes to the customer."

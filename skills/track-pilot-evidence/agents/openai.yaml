@@ -1,0 +1,4 @@
+interface:
+  display_name: "Track pilot evidence"
+  short_description: "Criteria, evidence, human reviews and customer handovers"
+  default_prompt: "Use $track-pilot-evidence to record pilot evidence and check go/no-go readiness."

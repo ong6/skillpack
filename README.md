@@ -83,12 +83,27 @@ CI fails when they drift.
 |---|---|
 | [`web-extract`](skills/web-extract/SKILL.md) | Read, search and scrape difficult web pages through Firecrawl. |
 | [`youtube-transcript`](skills/youtube-transcript/SKILL.md) | Fetch clean captions from a YouTube video. |
+| [`save-video`](skills/save-video/SKILL.md) | File a YouTube video as a searchable note with takeaways, category and tags. |
+| [`datastore`](skills/datastore/SKILL.md) | Keep structured records as append-only JSONL with a local SQLite cache for SQL. |
 | [`refine`](skills/refine/SKILL.md) | Review and improve the work until its constraints and requested score pass. |
 | [`handoff`](skills/handoff/SKILL.md) | Leave a compact continuation brief for the next agent or session. |
+| [`write-a-brief`](skills/write-a-brief/SKILL.md) | Write or tighten a one-to-two-page brief for a meeting with a professional. |
+| [`review-a-quote`](skills/review-a-quote/SKILL.md) | Review a vendor or construction quote line by line and separate what to ask now. |
 | [`markdown-to-pdf`](skills/markdown-to-pdf/SKILL.md) | Turn a Markdown note into a checked, print-ready A4 PDF. |
 | [`system-diagram`](skills/system-diagram/SKILL.md) | Turn a real system flow into a polished, readable SVG figure. |
+| [`ux-design`](skills/ux-design/SKILL.md) | Audit or design a page's UX against a usability checklist before visual polish. |
 | [`3d-design`](skills/3d-design/SKILL.md) | Choose the right authoring and browser workflow for a 3D object or animation. |
 | [`blender-authoring`](skills/blender-authoring/SKILL.md) | Build, animate, render and export Blender scenes with Python. |
+| [`trip-planner`](skills/trip-planner/SKILL.md) | Plan or replan a trip with live research on routes, hours, parking and food. |
+| [`product-shopping`](skills/product-shopping/SKILL.md) | Decide what to buy, or find the best legitimate price for a chosen model. |
+| [`compare-price`](skills/compare-price/SKILL.md) | Compare one product's landed cost across countries in a single currency. |
+| [`evaluate-condo`](skills/evaluate-condo/SKILL.md) | Evaluate a Singapore condo listing or development and file a cited verdict. |
+| [`teach`](skills/teach/SKILL.md) | Run a stateful, multi-session course on a topic in a learning workspace. |
+| [`interview-prep`](skills/interview-prep/SKILL.md) | Mock interviews from your own resume, with spoken-plan grading, drills, debriefs, system design. |
+| [`create-fde-deck`](skills/create-fde-deck/SKILL.md) | Write evidence-labelled field-engineering decks: discovery, architecture, pilot readout. |
+| [`review-fde-deck`](skills/review-fde-deck/SKILL.md) | Audit a field-engineering deck for logic, evidence, honesty, density and next steps. |
+| [`track-pilot-evidence`](skills/track-pilot-evidence/SKILL.md) | Track pilot criteria, evidence and risks where agents propose and humans decide. |
+| [`skillsmith`](skills/skillsmith/SKILL.md) | Make a skill from the repo, then keep it only if it beats the same model without it. |
 | [`feedback-loop`](skills/feedback-loop/SKILL.md) | Record feedback and patch the skill or rule that caused it in the same session. |
 <!-- SKILL INDEX END -->
 
@@ -103,6 +118,8 @@ _Getting text and data out of the web and video._
 |---|---|
 | [`web-extract`](skills/web-extract/SKILL.md) | Read or extract a web page with a local readability fetch first, escalating to Firecrawl only for JavaScript shells, blocked/thin results, public PDFs, structured extraction or browser interaction. Also use for live web searches that need Firecrawl. Not for YouTube (youtube-transcript) or LinkedIn (off-limits). |
 | [`youtube-transcript`](skills/youtube-transcript/SKILL.md) | Fetch clean transcripts or captions from YouTube URLs or video IDs. Use when the user shares a YouTube link or asks to transcribe, summarize, cite, or read a video. |
+| [`save-video`](skills/save-video/SKILL.md) | Save a YouTube video into the video library of the host repo as a note with overview, key takeaways, category and tags, indexed for later search. Use for "save this video", "add this to my videos", a YouTube link with "keep/remember/save", or "what videos do I have on X" (search the library). Not for a one-off summary the owner only wants to read now (youtube-transcript alone). |
+| [`datastore`](skills/datastore/SKILL.md) | Keep structured, queryable records in a git repository as a SQLite-backed dataset: append-only JSONL logs committed to git are the truth, and a local SQLite cache gives fast SQL. Use when data is many rows with the same fields that will be filtered, joined, deduplicated or trended over time ("track X over time", "store these as a table", "query my jobs/prices/workouts", a script that ingests records daily), or when a workflow needs durable machine state. Not for prose notes, one-off lists that fit in a Markdown table, or secrets. |
 
 Elsewhere:
 
@@ -118,6 +135,8 @@ _How replies, briefs and documents read, and how sessions hand off._
 |---|---|
 | [`refine`](skills/refine/SKILL.md) | Explicit-only. Improve the latest deliverable (draft, code, plan, note, design) through fresh independent reviewer agents until it meets the requested score and all explicit constraints, or three refinement rounds pass. Use for "/refine", "refine this", "run the refine loop", "auto-improve this". Not for a single quick edit, a PR or diff review (code-review), or feedback about agent behaviour (feedback-loop). |
 | [`handoff`](skills/handoff/SKILL.md) | Compact the current conversation into a handoff document. Use when the user asks for a handoff, continuation brief, or context package for another session or agent. |
+| [`write-a-brief`](skills/write-a-brief/SKILL.md) | Write or tighten a one-to-two-page meeting brief for a professional (contractor, consultant, doctor, vendor). Use for "meeting brief", "prep doc", "questions to ask", or fixing a brief that is too long or AI-sounding; not for email drafts or general notes. |
+| [`review-a-quote`](skills/review-a-quote/SKILL.md) | Review and file a vendor or construction quotation, assess commercial terms and line items, and separate immediate asks from parked items. Use for "check/review this quote" or quote PDFs. |
 | [`markdown-to-pdf`](skills/markdown-to-pdf/SKILL.md) | Convert a markdown note into a verified, print-ready A4 PDF. Use for printable notes, meeting handouts, or rebuilding generated PDFs; not for editing existing PDFs or building a LaTeX document. |
 
 Elsewhere:
@@ -133,6 +152,7 @@ _Diagrams, interfaces, 3D and visual judgment._
 | Skill | Does |
 |---|---|
 | [`system-diagram`](skills/system-diagram/SKILL.md) | Draw a polished system or architecture diagram as hand-authored inline SVG: request flows, RAG and agent pipelines, ingest queues, service maps, before/after comparisons. Use for "system diagram", "architecture diagram", "draw the flow", "diagram how X works", or a figure for a website, a case study, a README, or a research note. Not for charts of data (dataviz), UI mockups (design), or a one-hop relationship that a sentence explains faster. |
+| [`ux-design`](skills/ux-design/SKILL.md) | Audit or design the user experience of a web page or app: navigation, states, touch targets, focus, contrast, motion, responsive layout, copy in the interface. Runs a checklist pass against its bundled UX guidelines, then hands the visual direction to the frontend-design plugin skill. Use for "UX pass", "audit the UX", "does this page feel right", "make this usable on mobile", "accessibility check", or any new UI before it ships. Not for the aesthetic alone (frontend-design), charts (dataviz), diagrams (system-diagram), or adding a case-study page. |
 | [`3d-design`](skills/3d-design/SKILL.md) | Choose and use a 3D design workflow for UI illustrations, modeled objects, character animation, interactive scenes and web delivery. Use for "3D design", "3D animation", "model this", "Blender or Three.js", "make the movement natural", "seamless loop", "continuous pan", or selecting and switching 3D tools. Covers authoring, runtime, export and visual verification; not ordinary page layout, 2D architecture diagrams or unrelated Blender installation troubleshooting. |
 | [`blender-authoring`](skills/blender-authoring/SKILL.md) | Create, edit, animate, export and render Blender scenes using headless Python (bpy). Use after 3d-design selects Blender, or when the user explicitly requests Blender or a blend file. Covers geometry, materials, rigging, animation, lighting and export. Not for choosing between 3D tools, Three.js playback or ordinary page layout. |
 
@@ -146,9 +166,21 @@ Elsewhere:
 
 _Trips, shopping, property and learning._
 
+| Skill | Does |
+|---|---|
+| [`trip-planner`](skills/trip-planner/SKILL.md) | Plan or replan trips using live research for routes, hours, parking, food, tolls, and pacing. Use for itineraries and on-the-road questions about stops, parking, or eating. |
+| [`product-shopping`](skills/product-shopping/SKILL.md) | Recommend what product to buy, or find the best legitimate price for a chosen model in the buyer's own region. Use for comparisons, shortlists, "is X worth it", "which X should I get", cheapest price, deal checks, or price history; not for cross-country SG-vs-US comparisons in SGD (compare-price) or just listing which shops carry an item. |
+| [`compare-price`](skills/compare-price/SKILL.md) | Compare what one product (or a tier spread of competing products) costs across Singapore, the US, and any other named country, reported in SGD with live FX and landed cost. Use for /compare-price, "where in the world is it cheapest", "SG vs US price", or "should I buy this overseas"; not for single-region deal hunting or picking which model to buy (product-shopping). |
+| [`evaluate-condo`](skills/evaluate-condo/SKILL.md) | Evaluate a Singapore condo listing or development and file a cited Buy/Neutral/Avoid note. Use for PropertyGuru, 99.co, EdgeProp, "evaluate this condo", or "is this unit worth it". |
+| [`teach`](skills/teach/SKILL.md) | Create a stateful, multi-session course in the learning workspace. Use only when the user invokes teach or asks to start structured learning of a topic. Explicit-only; not for one-off explanations or research reports. |
+
 ### Career
 
 _Interview drilling and job-search practice._
+
+| Skill | Does |
+|---|---|
+| [`interview-prep`](skills/interview-prep/SKILL.md) | Run interview practice grounded in the candidate's own resume and target-company notes: mock interviews, behavioral STAR answers, number defense, walkthroughs of systems they built, stakeholder simulations, reference system-design walkthroughs, timed DSA coding rounds and plan reps graded and scheduled by due pattern, and debriefs of real interviews that queue what broke. Use for "interview prep", "mock interview", "run a DSA rep", "give me a rep", "what's due", "walk me through a system design", "I just had an interview", "log my onsite"; not for editing a resume or cover letter, finding or applying to jobs, answering recruiters, or building a customer presentation. |
 
 Elsewhere:
 
@@ -158,12 +190,19 @@ Elsewhere:
 
 _Customer-facing decks and pilot evidence for forward-deployed work._
 
+| Skill | Does |
+|---|---|
+| [`create-fde-deck`](skills/create-fde-deck/SKILL.md) | Draft a customer-facing field-engineering deck from supplied evidence: a discovery narrative, a technical architecture walkthrough, or a pilot readout with a stop, extend or expand recommendation. Writes a Markdown slide deck (rendered to slides or HTML with whatever tool the host has) in which every claim is labelled evidence, assumption or proposal, held to slide-density limits and checked by a script. Use for "make a discovery deck", "turn these customer notes into slides", "architecture deck for the customer", "pilot readout slides", "POC results deck", "go/no-go deck"; not for critiquing a deck that already exists (review-fde-deck), keeping a pilot's criteria and evidence record (track-pilot-evidence), or interview practice. |
+| [`review-fde-deck`](skills/review-fde-deck/SKILL.md) | Audit an existing customer-facing or field-engineering deck before it is shared: narrative logic, evidence quality, technical honesty, editorial density, accessibility and actionability, ranked into blockers, important fixes and polish with a slide-specific fix for each, then an optional revise-and-recheck loop. Works on a Markdown or HTML deck, a slide export or pasted slide text. Use for "review this deck", "check my slides before the customer meeting", "fact-check this pilot readout", "is this architecture deck honest", "pre-share deck QA"; not for drafting a new deck from notes (create-fde-deck), keeping a pilot's evidence record (track-pilot-evidence), or reviewing code, documents or emails that are not slides. |
+| [`track-pilot-evidence`](skills/track-pilot-evidence/SKILL.md) | Keep a customer pilot or proof of concept's success record as plain files: charter, criteria with metric, baseline and threshold, evidence tied to criteria, risks, decisions and attachments verified by SHA-256, customer-visible versus internal flags, a coverage and freshness check, and a customer-safe handover. An agent may propose that a criterion is met, tied to the exact inputs it reviewed; only a person records a review or a proceed, hold or stop decision. Use for "set up success criteria for the pilot", "log this pilot evidence", "attach the benchmark results", "is the POC ready for the go/no-go", "prepare the customer handover"; not for building slides (create-fde-deck), reviewing a deck (review-fde-deck), or interview practice. |
+
 ### Skill building
 
 _Making, testing and improving the skills themselves._
 
 | Skill | Does |
 |---|---|
+| [`skillsmith`](skills/skillsmith/SKILL.md) | Make an agent skill grounded in the current repository, then prove it beats the same model without it: gate whether a skill is the right mechanism, inventory existing skills and conventions, draft and lint, run a blinded baseline-versus-skill evaluation, and keep or retire. Use whenever asked to add, create, write, revise, install, review, or prove a skill for Claude Code or Codex; not for typo-only edits, AGENTS.md rules, hooks, or prompts that do not change a skill. |
 | [`feedback-loop`](skills/feedback-loop/SKILL.md) | Capture the owner's feedback about how the agent, a skill, a hook, a rule, or a reply behaved, log it in feedback.md, and patch whatever it targets in the same session so the behaviour changes by default. Fires on "don't do X", "stop doing", "why does it", "next time", "I prefer", "that was wrong", "that's annoying", "can I turn this off", "always" or "never" about agent behaviour, or a correction to a reply; not for feedback on the owner's own writing, on other people, or a one-off instruction for the current task. |
 
 Elsewhere:
