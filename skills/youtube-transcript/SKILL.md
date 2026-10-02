@@ -37,7 +37,12 @@ the message gives the manual command) and `FETCH_FAILED` (try a fallback below).
           --sub-format vtt -o "%(id)s.%(ext)s" "<url>"
    ```
    Then read the `.vtt`, strip the timestamp/`WEBVTT` lines, and dedupe rolling caption lines.
-3. **Browser automation** (last resort): open the watch page, click "Show transcript", read the panel. Fragile; only if 1 and 2 both fail.
+   If it stops at "Sign in to confirm you're not a bot", it needs `--cookies-from-browser`. On
+   macOS that can wait on a Keychain prompt nobody answers, so an unattended run goes to step 3.
+3. **Browser automation** (last resort): open the watch page in a logged-in browser profile and
+   click "Show transcript" with a real click; a scripted `element.click()` leaves the panel
+   closed. Read the text of the expanded engagement panel, where timestamp and caption lines
+   alternate. The same page gives the title, channel and chapters. Close the tab when done.
 
 ## Rules
 - If a video has **no captions at all**, say so; don't fabricate. (Audio-only transcription is out of scope here.)

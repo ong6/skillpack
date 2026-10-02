@@ -90,19 +90,19 @@ def main():
     ensure_dep()
     from youtube_transcript_api import YouTubeTranscriptApi
 
-    rows = None
-    # New API (>= 1.0): instance.fetch(...) -> iterable of snippet objects
+    # Pick the API by version so a real failure (IP block, no captions) is the one reported,
+    # not an AttributeError from retrying the other API.
     try:
-        fetched = YouTubeTranscriptApi().fetch(vid, languages=langs)
-        rows = [{"text": sn.text, "start": sn.start} for sn in fetched]
-    except Exception:
-        # Old API (< 1.0): static get_transcript -> list of dicts
-        try:
+        if hasattr(YouTubeTranscriptApi, "fetch"):  # >= 1.0: instance.fetch -> snippet objects
+            fetched = YouTubeTranscriptApi().fetch(vid, languages=langs)
+            rows = [{"text": sn.text, "start": sn.start} for sn in fetched]
+        else:  # < 1.0: static get_transcript -> list of dicts
             data = YouTubeTranscriptApi.get_transcript(vid, languages=langs)
             rows = [{"text": r["text"], "start": r["start"]} for r in data]
-        except Exception as e:  # noqa: BLE001
-            print(f"FETCH_FAILED: {e}", file=sys.stderr)
-            sys.exit(1)
+    except Exception as e:  # noqa: BLE001
+        reason = next((ln.strip() for ln in str(e).splitlines() if ln.strip()), "")
+        print(f"FETCH_FAILED: {type(e).__name__}: {reason}", file=sys.stderr)
+        sys.exit(1)
 
     out = []
     for r in rows:

@@ -5,6 +5,13 @@ are **5.2 LTS** and **4.5 LTS**; 5.0 (Nov 2025) and 4.0 (Nov 2023) were the big
 breaking points. Rather than memorising every change, **detect the version and
 discover names at runtime.**
 
+## Contents
+
+- Discover the API at runtime — do this instead of guessing
+- Known breaking changes to guard against
+- Context & reference footguns (all versions)
+- Sanity checklist before declaring success
+
 ## Discover the API at runtime — do this instead of guessing
 
 ```python

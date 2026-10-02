@@ -30,8 +30,9 @@ is a credit each. Check `firecrawl --status` before anything bulk, and never run
 
 ## Routing
 
-1. One ordinary URL: run `scripts/fetch.py` directly. Exit 0 is useful content; exit 3 /
-   `VERDICT: thin` means escalate the same URL to Firecrawl.
+1. One ordinary URL: run `scripts/fetch.py` directly, not through `python3` (its `uv` header
+   installs the dependencies; see Commands). Exit 0 is useful content; exit 3 / `VERDICT: thin`
+   means escalate the same URL to Firecrawl.
 2. Use Firecrawl immediately when JavaScript rendering is already known to be required, or for
    public PDFs, `-Q` structured extraction and interactive pages.
 3. Live discovery: use the host's native web search when available; use `firecrawl search` when it
