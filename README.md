@@ -117,19 +117,19 @@ CI fails when they drift.
 | [`save-video`](skills/save-video/SKILL.md) | File a YouTube video as a searchable note with takeaways, category and tags. |
 | [`datastore`](skills/datastore/SKILL.md) | Keep structured records as append-only JSONL with a local SQLite cache for SQL. |
 | [`refine`](skills/refine/SKILL.md) | Review and improve the work until its constraints and requested score pass. |
-| [`handoff`](skills/handoff/SKILL.md) | Leave a compact continuation brief for the next agent or session. |
+| [`handoff`](rarely-used/handoff/SKILL.md) _(rarely used)_ | Leave a compact continuation brief for the next agent or session. |
 | [`write-a-brief`](skills/write-a-brief/SKILL.md) | Write or tighten a one-to-two-page brief for a meeting with a professional. |
-| [`review-a-quote`](skills/review-a-quote/SKILL.md) | Review a vendor or construction quote line by line and separate what to ask now. |
+| [`review-a-quote`](rarely-used/review-a-quote/SKILL.md) _(rarely used)_ | Review a vendor or construction quote line by line and separate what to ask now. |
 | [`markdown-to-pdf`](skills/markdown-to-pdf/SKILL.md) | Turn a Markdown note into a checked, print-ready A4 PDF. |
 | [`system-diagram`](skills/system-diagram/SKILL.md) | Turn a real system flow into a polished, readable SVG figure. |
 | [`ux-design`](skills/ux-design/SKILL.md) | Audit or design a page's UX against a usability checklist before visual polish. |
 | [`3d-design`](skills/3d-design/SKILL.md) | Choose the right authoring and browser workflow for a 3D object or animation. |
 | [`blender-authoring`](skills/blender-authoring/SKILL.md) | Build, animate, render and export Blender scenes with Python. |
-| [`trip-planner`](skills/trip-planner/SKILL.md) | Plan or replan a trip with live research on routes, hours, parking and food. |
+| [`trip-planner`](rarely-used/trip-planner/SKILL.md) _(rarely used)_ | Plan or replan a trip with live research on routes, hours, parking and food. |
 | [`product-shopping`](skills/product-shopping/SKILL.md) | Decide what to buy, or find the best legitimate price for a chosen model. |
 | [`compare-price`](skills/compare-price/SKILL.md) | Compare one product's landed cost across countries in a single currency. |
 | [`evaluate-condo`](skills/evaluate-condo/SKILL.md) | Evaluate a Singapore condo listing or development and file a cited verdict. |
-| [`teach`](skills/teach/SKILL.md) | Run a stateful, multi-session course on a topic in a learning workspace. |
+| [`teach`](rarely-used/teach/SKILL.md) _(rarely used)_ | Run a stateful, multi-session course on a topic in a learning workspace. |
 | [`interview-prep`](skills/interview-prep/SKILL.md) | Mock interviews from your own resume, with spoken-plan grading, drills, debriefs, system design. |
 | [`create-fde-deck`](skills/create-fde-deck/SKILL.md) | Write evidence-labelled field-engineering decks: discovery, architecture, pilot readout. |
 | [`review-fde-deck`](skills/review-fde-deck/SKILL.md) | Audit a field-engineering deck for logic, evidence, honesty, density and next steps. |
@@ -165,9 +165,9 @@ _How replies, briefs and documents read, and how sessions hand off._
 | Skill | Does |
 |---|---|
 | [`refine`](skills/refine/SKILL.md) | Explicit-only. Improve the latest deliverable (draft, code, plan, note, design) through fresh independent reviewer agents until it meets the requested score and all explicit constraints, or three refinement rounds pass. Use for "/refine", "refine this", "run the refine loop", "auto-improve this". Not for a single quick edit, a PR or diff review (code-review), or feedback about agent behaviour (feedback-loop). |
-| [`handoff`](skills/handoff/SKILL.md) | Compact the current conversation into a handoff document. Use when the user asks for a handoff, continuation brief, or context package for another session or agent. |
+| [`handoff`](rarely-used/handoff/SKILL.md) _(rarely used)_ | Compact the current conversation into a handoff document. Use when the user asks for a handoff, continuation brief, or context package for another session or agent. |
 | [`write-a-brief`](skills/write-a-brief/SKILL.md) | Write or tighten a one-to-two-page meeting brief for a professional (contractor, consultant, doctor, vendor). Use for "meeting brief", "prep doc", "questions to ask", or fixing a brief that is too long or AI-sounding; not for email drafts or general notes. |
-| [`review-a-quote`](skills/review-a-quote/SKILL.md) | Review and file a vendor or construction quotation, assess commercial terms and line items, and separate immediate asks from parked items. Use for "check/review this quote" or quote PDFs. |
+| [`review-a-quote`](rarely-used/review-a-quote/SKILL.md) _(rarely used)_ | Review and file a vendor or construction quotation, assess commercial terms and line items, and separate immediate asks from parked items. Use for "check/review this quote" or quote PDFs. |
 | [`markdown-to-pdf`](skills/markdown-to-pdf/SKILL.md) | Convert a markdown note into a verified, print-ready A4 PDF. Use for printable notes, meeting handouts, or rebuilding generated PDFs; not for editing existing PDFs or building a LaTeX document. |
 
 Elsewhere:
@@ -221,11 +221,11 @@ _Trips, shopping, property and learning._
 
 | Skill | Does |
 |---|---|
-| [`trip-planner`](skills/trip-planner/SKILL.md) | Plan or replan trips using live research for routes, hours, parking, food, tolls, and pacing. Use for itineraries and on-the-road questions about stops, parking, or eating. |
+| [`trip-planner`](rarely-used/trip-planner/SKILL.md) _(rarely used)_ | Plan or replan trips using live research for routes, hours, parking, food, tolls, and pacing. Use for itineraries and on-the-road questions about stops, parking, or eating. |
 | [`product-shopping`](skills/product-shopping/SKILL.md) | Recommend what product to buy, or find the best legitimate price for a chosen model in the buyer's own region. Use for comparisons, shortlists, "is X worth it", "which X should I get", cheapest price, deal checks, or price history; not for cross-country SG-vs-US comparisons in SGD (compare-price) or just listing which shops carry an item. |
 | [`compare-price`](skills/compare-price/SKILL.md) | Compare what one product (or a tier spread of competing products) costs across Singapore, the US, and any other named country, reported in SGD with live FX and landed cost. Use for /compare-price, "where in the world is it cheapest", "SG vs US price", or "should I buy this overseas"; not for single-region deal hunting or picking which model to buy (product-shopping). |
 | [`evaluate-condo`](skills/evaluate-condo/SKILL.md) | Evaluate a Singapore condo listing or development and file a cited Buy/Neutral/Avoid note. Use for PropertyGuru, 99.co, EdgeProp, "evaluate this condo", or "is this unit worth it". |
-| [`teach`](skills/teach/SKILL.md) | Create a stateful, multi-session course in the learning workspace. Use only when the user invokes teach or asks to start structured learning of a topic. Explicit-only; not for one-off explanations or research reports. |
+| [`teach`](rarely-used/teach/SKILL.md) _(rarely used)_ | Create a stateful, multi-session course in the learning workspace. Use only when the user invokes teach or asks to start structured learning of a topic. Explicit-only; not for one-off explanations or research reports. |
 
 ### Career
 
