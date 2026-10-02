@@ -1,0 +1,1490 @@
+#!/usr/bin/env python3
+"""Link, sync, guard and publish the public and private agent-skill checkouts.
+
+  skills up      --repo R --machines M [--hook claude|codex] [--wait]
+  skills link    --repo R --machines M
+  skills unlink  --repo R --machines M
+  skills doctor  --repo R --machines M [--json]
+  skills guard   [PATH ...] [--root DIR] [--terms FILE]
+  skills publish --checkout C -m MESSAGE
+
+The profile comes from the machines registry (--machines): the first machine whose `match`
+fields all equal this host's facts (os, model, hostname prefix, wsl, user) supplies its
+`skills` object. No match means project scope, the --repo only, public skills only.
+Checkouts live at <root>/skills and <root>/skills-private; links point at
+<checkout>/skills/<name>. Only symlinks into those two checkouts are ever changed.
+
+Stdlib only, Python 3.7+. This tool never starts a model session: the only AI CLI it runs is
+`claude mcp get|add`, to register MCP servers.
+
+Environment: SKILLS_FACTS (JSON merged into the detected host facts, to simulate another
+machine), SKILLS_NO_FETCH=1, SKILLS_FETCH_INTERVAL (seconds, default 300), SKILLS_ROOT
+(guard), SKILLS_PUBLIC_URL, SKILLS_PRIVATE_URL, PDS_ROOT (store; lint fallback).
+"""
+from __future__ import annotations
+
+import argparse
+import ast
+import contextlib
+import fnmatch
+import getpass
+import hashlib
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import time
+
+try:
+    import fcntl
+except ImportError:  # pragma: no cover - not POSIX
+    fcntl = None
+
+PUBLIC = "skills"
+PRIVATE = "skills-private"
+DEFAULT_ROOT = "~/Sideproject"  # public-guard: allow
+PUBLIC_URL = "https://github.com/ong6/skills.git"
+PRIVATE_URLS = ("https://github.com/ong6/skills-private.git", "git@github.com:ong6/skills-private.git")
+LINK_SUBDIRS = (".claude/skills", ".agents/skills")
+FETCH_INTERVAL = 300
+EXCLUDE_START = "# >>> skills links (managed by bin/skills)"
+EXCLUDE_END = "# <<< skills links"
+UNMATCHED = "unregistered machine"
+
+
+# ---------------------------------------------------------------------------------------- basics
+
+def home():
+    return os.path.expanduser("~")
+
+
+def expand(path):
+    return os.path.abspath(os.path.expanduser(path))
+
+
+def short(path):
+    h = home().rstrip(os.sep) + os.sep
+    return "~/" + path[len(h):] if path.startswith(h) else path
+
+
+def cache_dir():
+    return os.path.join(home(), ".cache", "skills")
+
+
+def stamp(name):
+    return os.path.join(cache_dir(), name)
+
+
+def mtime(path):
+    try:
+        return os.path.getmtime(path)
+    except OSError:
+        return None
+
+
+def touch(path):
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "a"):
+            pass
+        os.utime(path, None)
+    except OSError:
+        pass
+
+
+def ago(when):
+    if when is None:
+        return "never"
+    s = max(0, int(time.time() - when))
+    if s < 60:
+        return "just now"
+    for unit, size in (("d", 86400), ("h", 3600), ("m", 60)):
+        if s >= size:
+            return "{}{} ago".format(s // size, unit)
+    return "just now"
+
+
+def quiet_env():
+    """Environment that can never prompt: no terminal, askpass or ssh passphrase prompts."""
+    env = dict(os.environ)
+    ssh = env.get("GIT_SSH_COMMAND") or "ssh"
+    env.update({
+        "GIT_TERMINAL_PROMPT": "0",
+        "GCM_INTERACTIVE": "never",
+        "GIT_ASKPASS": "true",
+        "SSH_ASKPASS_REQUIRE": "never",
+        "GIT_SSH_COMMAND": ssh + " -o BatchMode=yes -o ConnectTimeout=10",
+    })
+    return env
+
+
+def run(cmd, cwd=None, timeout=30):
+    try:
+        return subprocess.run(cmd, cwd=cwd, env=quiet_env(), stdin=subprocess.DEVNULL,
+                              stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                              universal_newlines=True, timeout=timeout)
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return None
+
+
+def git(checkout, *args, **kw):
+    return run(["git", "-C", checkout] + list(args), timeout=kw.get("timeout", 30))
+
+
+def git_out(checkout, *args, **kw):
+    r = git(checkout, *args, **kw)
+    return r.stdout.strip() if r is not None and r.returncode == 0 else None
+
+
+@contextlib.contextmanager
+def file_lock(path, blocking=True, timeout=10.0):
+    """flock-based lock; yields True when held. Never raises for lock trouble."""
+    fh = None
+    got = False
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        fh = open(path, "a")
+    except OSError:
+        fh = None
+    if fh is None or fcntl is None:
+        got = True
+    else:
+        deadline = time.time() + timeout
+        while True:
+            try:
+                fcntl.flock(fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                got = True
+                break
+            except OSError:
+                if not blocking or time.time() >= deadline:
+                    break
+                time.sleep(0.1)
+    try:
+        yield got
+    finally:
+        if fh is not None:
+            if got and fcntl is not None:
+                try:
+                    fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
+                except OSError:
+                    pass
+            fh.close()
+
+
+def checkout_lock_path(checkout):
+    gitdir = os.path.join(checkout, ".git")
+    if os.path.isdir(gitdir):
+        return os.path.join(gitdir, "skills.lock")
+    digest = hashlib.sha1(os.path.realpath(checkout).encode("utf-8")).hexdigest()[:16]
+    return os.path.join(cache_dir(), "locks", digest + ".lock")
+
+
+def say(line, stream=None):
+    stream = stream or sys.stdout
+    try:
+        stream.write(line + "\n")
+    except UnicodeEncodeError:
+        stream.write(line.encode("ascii", "replace").decode("ascii") + "\n")
+
+
+# -------------------------------------------------------------------------------------- profiles
+
+def host_facts():
+    import platform
+    facts = {}
+    override = {}
+    raw = os.environ.get("SKILLS_FACTS")
+    if raw:
+        try:
+            value = json.loads(raw)
+            override = value if isinstance(value, dict) else {}
+        except ValueError:
+            override = {}
+    facts["os"] = platform.system()
+    facts["hostname"] = platform.node().split(".")[0]
+    try:
+        facts["user"] = getpass.getuser()
+    except Exception:  # noqa: BLE001 - no passwd entry and no USER
+        facts["user"] = ""
+    if facts["os"] == "Darwin" and "model" not in override:
+        r = run(["sysctl", "-n", "hw.model"], timeout=2)
+        facts["model"] = r.stdout.strip() if r is not None and r.returncode == 0 else ""
+    try:
+        with open("/proc/version", encoding="utf-8") as fh:
+            facts["wsl"] = "microsoft" in fh.read().lower()
+    except OSError:
+        facts["wsl"] = False
+    facts.update(override)
+    return facts
+
+
+def rule_matches(rule, facts):
+    """Same semantics as the store's startup summary: every field equal, hostname by prefix."""
+    for key, want in rule.items():
+        if key == "hostname":
+            if not str(facts.get("hostname", "")).startswith(str(want)):
+                return False
+        elif facts.get(key) != want:
+            return False
+    return True
+
+
+def default_profile():
+    return {"scope": "project", "root": DEFAULT_ROOT, "private": False, "repos": [],
+            "enable": ["*"], "disable": [], "mcp": []}
+
+
+def str_list(value, fallback):
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, list):
+        return [v for v in value if isinstance(v, str) and v.strip()]
+    return list(fallback)
+
+
+def load_profile(machines, facts):
+    """(machine name or None, profile, has_skills_object) for the first matching machine."""
+    profile = default_profile()
+    if not machines:
+        return None, profile, False
+    try:
+        with open(expand(machines), encoding="utf-8") as fh:
+            registry = json.load(fh)
+    except (OSError, ValueError, TypeError):
+        return None, profile, False
+    entries = registry.get("machines") if isinstance(registry, dict) else None
+    for entry in entries if isinstance(entries, list) else []:
+        rule = entry.get("match", {}) if isinstance(entry, dict) else None
+        if not isinstance(rule, dict) or not rule_matches(rule, facts):
+            continue
+        raw = entry.get("skills")
+        if not isinstance(raw, dict):
+            return str(entry.get("name") or "matched machine"), profile, False
+        if raw.get("scope") in ("project", "user"):
+            profile["scope"] = raw["scope"]
+        if isinstance(raw.get("root"), str) and raw["root"].strip():
+            profile["root"] = raw["root"]
+        profile["private"] = raw.get("private") is True
+        for key in ("repos", "enable", "disable", "mcp"):
+            if key in raw:
+                profile[key] = str_list(raw[key], profile[key])
+        return str(entry.get("name") or "matched machine"), profile, True
+    return None, profile, False
+
+
+def dedupe_paths(paths):
+    seen, out = set(), []
+    for p in paths:
+        key = os.path.realpath(p)
+        if key not in seen:
+            seen.add(key)
+            out.append(p)
+    return out
+
+
+class Context(object):
+    def __init__(self, args):
+        self.facts = host_facts()
+        self.machine, self.profile, self.has_profile = load_profile(
+            getattr(args, "machines", None), self.facts)
+        self.scope = self.profile["scope"]
+        self.root = expand(self.profile["root"])
+        self.public = os.path.join(self.root, PUBLIC)
+        self.private = os.path.join(self.root, PRIVATE)
+        self.use_private = self.profile["private"]
+        repos = [expand(r) for r in (getattr(args, "repo", None) or [])]
+        repos += [expand(r) for r in self.profile["repos"]]
+        self.repos = dedupe_paths(repos)
+        self.live_repos = [r for r in self.repos if os.path.isdir(r)]
+        self.home_dirs = [os.path.join(home(), d) for d in LINK_SUBDIRS]
+        self.repo_dirs = [os.path.join(r, d) for r in self.live_repos for d in LINK_SUBDIRS]
+        # A repo at $HOME would make a project link dir equal a home dir; never guard it away.
+        repo_real = set(os.path.realpath(d) for d in self.repo_dirs)
+        self.guard_home_dirs = [d for d in self.home_dirs if os.path.realpath(d) not in repo_real]
+
+    @property
+    def where(self):
+        return "{}, {}".format(self.machine or UNMATCHED, self.scope)
+
+    def checkouts(self):
+        return [self.public] + ([self.private] if self.use_private else [])
+
+
+# --------------------------------------------------------------------------------------- catalog
+
+def unquote(value):
+    value = value.strip()
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in "'\"":
+        return value[1:-1]
+    return value
+
+
+def parse_catalog(path):
+    """{category key: set(skill names)} from the YAML subset catalog.yaml uses.
+
+    Handles `categories:` as a block list of mappings whose `skills` is either a flow list
+    (`skills: [a, b]`) or a block list (`skills:` then `- a` lines). No PyYAML needed.
+    """
+    try:
+        with open(path, encoding="utf-8") as fh:
+            lines = fh.read().splitlines()
+    except (OSError, UnicodeError):
+        return {}
+    cats = {}
+    entries = []
+    in_section = False
+    entry = None
+    entry_indent = None
+    list_indent = None
+    for raw in lines:
+        if not raw.strip() or raw.lstrip().startswith("#"):
+            continue
+        indent = len(raw) - len(raw.lstrip(" "))
+        text = raw.strip()
+        if indent == 0 and not text.startswith("-"):
+            in_section = re.match(r"categories\s*:\s*$", text) is not None
+            entry, entry_indent, list_indent = None, None, None
+            continue
+        if not in_section:
+            continue
+        if text.startswith("- ") or text == "-":
+            if entry_indent is None:
+                entry_indent = indent
+            if indent == entry_indent:
+                entry = {"key": None, "skills": []}
+                entries.append(entry)
+                list_indent = None
+                text = text[1:].strip()
+                indent = indent + 2
+                if not text:
+                    continue
+            elif list_indent is not None and indent >= list_indent and entry is not None:
+                item = text[1:].strip()
+                if ":" not in item and item:
+                    entry["skills"].append(unquote(item.split(" #")[0]))
+                continue
+            else:
+                continue
+        if entry is None:
+            continue
+        m = re.match(r"([A-Za-z0-9_-]+)\s*:\s*(.*)$", text)
+        if not m:
+            continue
+        key, value = m.group(1), m.group(2).split(" #")[0].strip()
+        list_indent = None
+        if key == "key":
+            entry["key"] = unquote(value)
+        elif key == "skills":
+            if value.startswith("["):
+                inner = value.strip("[]")
+                entry["skills"].extend(unquote(v) for v in inner.split(",") if v.strip())
+            elif not value:
+                list_indent = indent
+    for e in entries:
+        if e["key"]:
+            cats.setdefault(e["key"], set()).update(s for s in e["skills"] if s)
+    return cats
+
+
+# ------------------------------------------------------------------------------------------ plan
+
+def scan(checkout):
+    base = os.path.join(checkout, "skills")
+    found = {}
+    try:
+        names = sorted(os.listdir(base))
+    except OSError:
+        return found
+    for name in names:
+        path = os.path.join(base, name)
+        if not name.startswith(".") and os.path.isfile(os.path.join(path, "SKILL.md")):
+            found[name] = path
+    return found
+
+
+class Plan(object):
+    def __init__(self, ctx):
+        public = scan(ctx.public)
+        private = scan(ctx.private) if ctx.use_private else {}
+        self.categories = {}
+        for checkout in ctx.checkouts():
+            for key, names in parse_catalog(os.path.join(checkout, "catalog.yaml")).items():
+                self.categories.setdefault(key, set()).update(names)
+        self.available = dict(public)
+        self.available.update(private)
+        self.overrides = sorted(set(public) & set(private))
+        enable, disable = ctx.profile["enable"], ctx.profile["disable"]
+        self.selected = {}
+        for name in sorted(self.available):
+            if any(self.hit(s, name) for s in enable) and not any(self.hit(s, name) for s in disable):
+                self.selected[name] = self.available[name]
+        self.unknown = []
+        for s in enable + disable:
+            if s.startswith("category:"):
+                if s[len("category:"):] not in self.categories:
+                    self.unknown.append(s)
+            elif not any(fnmatch.fnmatchcase(n, s) for n in self.available):
+                self.unknown.append(s)
+
+    def hit(self, selector, name):
+        if selector.startswith("category:"):
+            return name in self.categories.get(selector[len("category:"):], ())
+        return fnmatch.fnmatchcase(name, selector)
+
+
+# ----------------------------------------------------------------------------------------- links
+
+def link_target(path):
+    try:
+        t = os.readlink(path)
+    except OSError:
+        return None
+    if not os.path.isabs(t):
+        t = os.path.join(os.path.dirname(path), t)
+    return os.path.normpath(t)
+
+
+def canon(path):
+    """Resolve the parents but not the last component, which may dangle."""
+    return os.path.join(os.path.realpath(os.path.dirname(path)), os.path.basename(path))
+
+
+class Owner(object):
+    """Recognises symlinks that point into our two checkouts (and nothing else)."""
+
+    def __init__(self, checkouts):
+        self.prefixes = set()
+        for c in checkouts:
+            for v in (os.path.normpath(c), os.path.realpath(c)):
+                self.prefixes.add(v.rstrip(os.sep) + os.sep)
+
+    def owns(self, link):
+        t = link_target(link)
+        if t is None:
+            return False
+        for cand in (t, canon(t)):
+            for p in self.prefixes:
+                if (cand + os.sep).startswith(p):
+                    return True
+        return False
+
+
+def same_target(link, target):
+    t = link_target(link)
+    return t is not None and (t == os.path.normpath(target) or canon(t) == canon(target))
+
+
+class LinkResult(object):
+    def __init__(self):
+        self.added, self.replaced, self.removed = [], [], []
+        self.conflicts, self.unwritable = [], []
+        self.linked = {}  # link dir -> names linked there
+
+    @property
+    def changed(self):
+        return bool(self.added or self.replaced or self.removed)
+
+
+def sync_dir(d, desired, owner, result, create=True, quiet=False):
+    """Make our links in d equal desired; never touch anything we don't own."""
+    if desired and create and not os.path.isdir(d):
+        try:
+            os.makedirs(d)
+        except OSError:
+            result.unwritable.append(d)
+            return
+    if not os.path.isdir(d):
+        return
+    try:
+        names = sorted(os.listdir(d))
+    except OSError:
+        return
+    ours = [n for n in names if os.path.islink(os.path.join(d, n)) and owner.owns(os.path.join(d, n))]
+    pending = [n for n in ours if n not in desired]
+    pending += [n for n in desired if not (os.path.islink(os.path.join(d, n))
+                                           and same_target(os.path.join(d, n), desired[n]))]
+    if pending and not os.access(d, os.W_OK):
+        if not quiet:
+            result.unwritable.append(d)
+        return
+    linked = result.linked.setdefault(d, [])
+    for name in ours:
+        if name in desired:
+            continue
+        try:
+            os.unlink(os.path.join(d, name))
+            result.removed.append(os.path.join(d, name))
+        except OSError:
+            pass
+    for name, target in sorted(desired.items()):
+        path = os.path.join(d, name)
+        if os.path.islink(path):
+            if same_target(path, target):
+                linked.append(name)
+                continue
+            if not owner.owns(path):
+                result.conflicts.append(path)
+                continue
+            tmp = path + ".skills-tmp"
+            try:
+                if os.path.lexists(tmp):
+                    os.unlink(tmp)
+                os.symlink(target, tmp)
+                os.replace(tmp, path)
+                result.replaced.append(path)
+                linked.append(name)
+            except OSError:
+                result.conflicts.append(path)
+        elif os.path.lexists(path):
+            result.conflicts.append(path)
+        else:
+            try:
+                os.symlink(target, path)
+                result.added.append(path)
+                linked.append(name)
+            except OSError:
+                if os.path.islink(path) and same_target(path, target):
+                    linked.append(name)
+                else:
+                    result.conflicts.append(path)
+
+
+def write_exclude(repo, entries):
+    """Keep linked paths out of the repo's git status via .git/info/exclude."""
+    gitdir = os.path.join(repo, ".git")
+    if not os.path.isdir(gitdir):
+        return
+    path = os.path.join(gitdir, "info", "exclude")
+    try:
+        with open(path, encoding="utf-8") as fh:
+            text = fh.read()
+    except (OSError, UnicodeError):
+        text = ""
+    kept, inside = [], False
+    for line in text.splitlines():
+        if line == EXCLUDE_START:
+            inside = True
+        elif line == EXCLUDE_END:
+            inside = False
+        elif not inside:
+            kept.append(line)
+    if entries:
+        kept += [EXCLUDE_START] + sorted(entries) + [EXCLUDE_END]
+    new = "\n".join(kept).rstrip("\n") + "\n" if kept else ""
+    if new.rstrip("\n") == text.rstrip("\n"):
+        return
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(new)
+    except OSError:
+        pass
+
+
+def do_link(ctx, plan=None):
+    plan = plan or Plan(ctx)
+    owner = Owner([ctx.public, ctx.private])
+    result = LinkResult()
+    with file_lock(stamp("link.lock"), timeout=5):
+        if ctx.scope == "project":
+            for d in ctx.repo_dirs:
+                sync_dir(d, plan.selected, owner, result)
+            for d in ctx.guard_home_dirs:  # scope guard
+                sync_dir(d, {}, owner, result, create=False, quiet=True)
+            for repo in ctx.live_repos:
+                entries = []
+                for sub in LINK_SUBDIRS:
+                    for name in result.linked.get(os.path.join(repo, sub), []):
+                        entries.append("/{}/{}".format(sub, name))
+                write_exclude(repo, entries)
+        else:
+            for d in ctx.home_dirs:
+                sync_dir(d, plan.selected, owner, result)
+            for d in ctx.repo_dirs:
+                if d not in ctx.home_dirs:
+                    sync_dir(d, {}, owner, result, create=False, quiet=True)
+            for repo in ctx.live_repos:
+                write_exclude(repo, [])
+    return plan, result
+
+
+def do_unlink(ctx):
+    owner = Owner([ctx.public, ctx.private])
+    result = LinkResult()
+    with file_lock(stamp("link.lock"), timeout=5):
+        for d in dedupe_paths(ctx.repo_dirs + ctx.home_dirs):
+            sync_dir(d, {}, owner, result, create=False, quiet=d in ctx.home_dirs)
+        for repo in ctx.live_repos:
+            write_exclude(repo, [])
+    return result
+
+
+# ------------------------------------------------------------------------------------------- mcp
+
+def claude_config():
+    base = os.environ.get("CLAUDE_CONFIG_DIR")
+    path = os.path.join(base, ".claude.json") if base else os.path.join(home(), ".claude.json")
+    try:
+        with open(path, encoding="utf-8") as fh:
+            data = json.load(fh)
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def mcp_in_files(repo, name, config):
+    """Cheap check before asking `claude mcp get`: local, user and .mcp.json scopes."""
+    projects = config.get("projects") if isinstance(config.get("projects"), dict) else {}
+    for key in (repo, os.path.realpath(repo)):
+        servers = (projects.get(key) or {}).get("mcpServers") if isinstance(projects.get(key), dict) else None
+        if isinstance(servers, dict) and name in servers:
+            return True
+    user = config.get("mcpServers")
+    if isinstance(user, dict) and name in user:
+        return True
+    try:
+        with open(os.path.join(repo, ".mcp.json"), encoding="utf-8") as fh:
+            shared = json.load(fh).get("mcpServers", {})
+        return isinstance(shared, dict) and name in shared
+    except (OSError, ValueError, AttributeError):
+        return False
+
+
+def load_servers(ctx):
+    try:
+        with open(os.path.join(ctx.private, "mcp", "servers.json"), encoding="utf-8") as fh:
+            data = json.load(fh)
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return None
+
+
+class McpResult(object):
+    def __init__(self):
+        self.added, self.failed, self.undefined, self.missing = [], [], [], []
+        self.no_claude = False
+
+
+def mcp_command(claude, name, spec, repo):
+    def sub(value):
+        return str(value).replace("{store}", repo)
+    cmd = [claude, "mcp", "add", "-s", "local", name]
+    env = spec.get("env") if isinstance(spec.get("env"), dict) else {}
+    for key in sorted(env):
+        cmd += ["-e", "{}={}".format(key, sub(env[key]))]
+    args = spec.get("args") if isinstance(spec.get("args"), list) else []
+    return cmd + ["--", sub(spec["command"])] + [sub(a) for a in args]
+
+
+def register_mcp(ctx, apply=True):
+    """Register each profile MCP server at Claude local scope for every repo, once."""
+    result = McpResult()
+    names = ctx.profile["mcp"]
+    if not names or not ctx.live_repos:
+        return result
+    servers = load_servers(ctx)
+    if servers is None:
+        result.undefined = list(names)
+        return result
+    config = claude_config()
+    claude = shutil.which("claude")
+    for repo in ctx.live_repos:
+        for name in names:
+            spec = servers.get(name)
+            if not isinstance(spec, dict) or not isinstance(spec.get("command"), str):
+                if name not in result.undefined:
+                    result.undefined.append(name)
+                continue
+            if mcp_in_files(repo, name, config):
+                continue
+            if not claude:
+                result.no_claude = True
+                result.missing.append((repo, name))
+                continue
+            got = run([claude, "mcp", "get", name], cwd=repo, timeout=20)
+            if got is not None and got.returncode == 0:
+                continue
+            if not apply:
+                result.missing.append((repo, name))
+                continue
+            added = run(mcp_command(claude, name, spec, repo), cwd=repo, timeout=60)
+            if added is not None and added.returncode == 0:
+                result.added.append(name)
+            else:
+                result.failed.append(name)
+    return result
+
+
+# ------------------------------------------------------------------------------------------ sync
+
+def clone(url, dest, timeout=600):
+    part = "{}.partial-{}".format(dest, os.getpid())
+    shutil.rmtree(part, ignore_errors=True)
+    r = run(["git", "clone", "--quiet", url, part], timeout=timeout)
+    if r is None or r.returncode != 0:
+        shutil.rmtree(part, ignore_errors=True)
+        return False, "clone failed: " + ((r.stderr.strip().splitlines() or ["timeout"])[-1] if r else "timeout")
+    try:
+        os.rename(part, dest)
+    except OSError as error:
+        shutil.rmtree(part, ignore_errors=True)
+        return False, "clone failed: {}".format(error)
+    return True, None
+
+
+def fetch_ff(checkout):
+    """Fetch, then fast-forward the current branch only when the worktree is clean."""
+    with file_lock(checkout_lock_path(checkout), blocking=False) as got:
+        if not got:
+            return False, None
+        r = git(checkout, "fetch", "--quiet", "--prune", "origin", timeout=120)
+        if r is None or r.returncode != 0:
+            err = (r.stderr.strip().splitlines() or ["?"])[-1] if r is not None else "timeout"
+            return False, "fetch failed: " + err
+        if git_out(checkout, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}") is None:
+            return False, None
+        status = git_out(checkout, "status", "--porcelain")
+        if status is None or status:
+            return False, None
+        if git_out(checkout, "rev-list", "--count", "HEAD..@{u}") in (None, "0"):
+            return False, None
+        merged = git(checkout, "merge", "--ff-only", "--quiet", "@{u}")
+        return merged is not None and merged.returncode == 0, None
+
+
+def private_url():
+    if os.environ.get("SKILLS_PRIVATE_URL"):
+        return os.environ["SKILLS_PRIVATE_URL"]
+    for url in PRIVATE_URLS:
+        r = run(["git", "ls-remote", "--heads", url], timeout=20)
+        if r is not None and r.returncode == 0:
+            return url
+    return None
+
+
+def sync_checkouts(ctx, relink=True):
+    """Clone missing checkouts, fetch and fast-forward clean ones. Network; run in background."""
+    with file_lock(stamp("sync.lock"), blocking=False) as got:
+        if not got:
+            return False
+        touch(stamp("attempted"))
+        changed, errors = False, []
+        if os.path.isdir(ctx.public):
+            moved, err = fetch_ff(ctx.public)
+        else:
+            moved, err = clone(os.environ.get("SKILLS_PUBLIC_URL") or PUBLIC_URL, ctx.public)
+        changed = changed or moved
+        public_ok = err is None
+        if err:
+            errors.append("public: " + err)
+        if ctx.use_private:
+            if os.path.isdir(ctx.private):
+                moved, err = fetch_ff(ctx.private)
+            else:
+                url = private_url()
+                moved, err = clone(url, ctx.private) if url else (False, "no non-interactive access")
+            changed = changed or moved
+            if err:
+                errors.append("private: " + err)
+        if public_ok:
+            touch(stamp("fetched"))
+        for e in errors:
+            say("skills sync: " + e, sys.stderr)
+        if changed and relink:
+            do_link(ctx)
+            register_mcp(ctx)
+        return changed
+
+
+def spawn_sync(ctx, args):
+    if os.environ.get("SKILLS_NO_FETCH"):
+        return
+    try:
+        interval = float(os.environ.get("SKILLS_FETCH_INTERVAL", FETCH_INTERVAL))
+    except ValueError:
+        interval = FETCH_INTERVAL
+    last = mtime(stamp("attempted"))
+    if last is not None and time.time() - last < interval:
+        return
+    touch(stamp("attempted"))
+    cmd = [sys.executable, os.path.abspath(__file__), "_sync"]
+    if getattr(args, "machines", None):
+        cmd += ["--machines", expand(args.machines)]
+    for repo in getattr(args, "repo", None) or []:
+        cmd += ["--repo", expand(repo)]
+    try:
+        os.makedirs(cache_dir(), exist_ok=True)
+        with open(stamp("sync.log"), "w") as log:
+            subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=log, stderr=log, env=quiet_env(),
+                             cwd=home(), close_fds=True, start_new_session=True)
+    except OSError:
+        pass
+
+
+# -------------------------------------------------------------------------------- up / link / ...
+
+def status_line(ctx, plan, result, mcp):
+    parts = ["skills: {} linked ({})".format(len(plan.selected), ctx.where)]
+    fetched = mtime(stamp("fetched"))
+    parts.append("fetched " + ago(fetched) if fetched else "never fetched")
+    if result.changed:
+        added = set(os.path.basename(p) for p in result.added + result.replaced)
+        removed = set(os.path.basename(p) for p in result.removed) - added
+        parts.append("{} added, {} removed".format(len(added), len(removed)))
+    if plan.overrides:
+        parts.append("private overrides public: " + ", ".join(plan.overrides))
+    if result.conflicts:
+        parts.append("{} conflict(s), run skills doctor".format(len(result.conflicts)))
+    if result.unwritable:
+        parts.append("not writable: " + ", ".join(short(d) for d in result.unwritable))
+    if not os.path.isdir(ctx.public):
+        parts.append("public checkout missing" + ("" if os.environ.get("SKILLS_NO_FETCH")
+                                                  else " (cloning in background)"))
+    if ctx.use_private and not os.path.isdir(ctx.private):
+        parts.append("private checkout missing")
+    if mcp.added:
+        parts.append("mcp added: " + ", ".join(sorted(set(mcp.added))))
+    if mcp.failed:
+        parts.append("mcp failed: " + ", ".join(sorted(set(mcp.failed))))
+    return " · ".join(parts)
+
+
+def cmd_up(args):
+    changed = False
+    try:
+        ctx = Context(args)
+        if args.wait:
+            sync_checkouts(ctx, relink=False)
+        else:
+            spawn_sync(ctx, args)
+        plan, result = do_link(ctx)
+        changed = result.changed
+        mcp = register_mcp(ctx)
+        line = status_line(ctx, plan, result, mcp)
+    except Exception as error:  # noqa: BLE001 - a session start must never fail
+        line = "skills: up failed ({}: {})".format(type(error).__name__, error)
+    try:
+        if args.hook == "claude" and changed:
+            say(json.dumps({"hookSpecificOutput": {
+                "hookEventName": "SessionStart", "additionalContext": line, "reloadSkills": True}}))
+        else:
+            say(line)
+    except Exception:  # noqa: BLE001
+        pass
+    return 0
+
+
+def cmd_link(args):
+    ctx = Context(args)
+    plan, result = do_link(ctx)
+    for path in result.added + result.replaced:
+        say("linked   " + short(path))
+    for path in result.removed:
+        say("removed  " + short(path))
+    for path in result.conflicts:
+        say("conflict " + short(path) + " (not ours; left alone)", sys.stderr)
+    for name in plan.overrides:
+        say("note: private {} overrides public {}".format(name, name))
+    say(status_line(ctx, plan, result, McpResult()))
+    return 1 if result.conflicts or result.unwritable else 0
+
+
+def cmd_unlink(args):
+    ctx = Context(args)
+    result = do_unlink(ctx)
+    for path in result.removed:
+        say("removed  " + short(path))
+    say("skills: {} link(s) removed".format(len(result.removed)))
+    return 1 if result.unwritable else 0
+
+
+def checkout_state(path):
+    state = {"path": path, "exists": os.path.isdir(path)}
+    if not state["exists"]:
+        return state
+    state["branch"] = git_out(path, "rev-parse", "--abbrev-ref", "HEAD")
+    status = git_out(path, "status", "--porcelain")
+    state["dirty"] = len(status.splitlines()) if status else 0
+    counts = git_out(path, "rev-list", "--left-right", "--count", "HEAD...@{u}")
+    if counts:
+        ahead, behind = counts.split()
+        state["ahead"], state["behind"] = int(ahead), int(behind)
+    return state
+
+
+def cmd_doctor(args):
+    ctx = Context(args)
+    plan = Plan(ctx)
+    owner = Owner([ctx.public, ctx.private])
+    problems, warnings = [], []
+    report = {
+        "machine": ctx.machine or UNMATCHED,
+        "facts": {k: ctx.facts.get(k) for k in ("os", "model", "hostname", "user", "wsl")},
+        "profile": ctx.profile, "has_profile": ctx.has_profile, "root": ctx.root,
+        "scope": ctx.scope, "repos": ctx.repos, "selected": sorted(plan.selected),
+        "overrides": plan.overrides, "checkouts": {}, "links": {},
+    }
+    for label, path, needed in (("public", ctx.public, True), ("private", ctx.private, ctx.use_private)):
+        state = checkout_state(path) if needed or os.path.isdir(path) else {"path": path, "exists": False}
+        report["checkouts"][label] = state
+        if not state["exists"]:
+            if needed:
+                problems.append("{} checkout missing: {}".format(label, short(path)))
+            continue
+        if state.get("dirty"):
+            problems.append("{} checkout dirty: {} file(s); commit with `skills publish`".format(
+                label, state["dirty"]))
+        if state.get("ahead"):
+            warnings.append("{} checkout has {} unpushed commit(s)".format(label, state["ahead"]))
+        if state.get("behind"):
+            warnings.append("{} checkout is {} commit(s) behind its upstream".format(label, state["behind"]))
+    for repo in ctx.repos:
+        if repo not in ctx.live_repos:
+            warnings.append("repo not found: " + short(repo))
+    active = ctx.repo_dirs if ctx.scope == "project" else ctx.home_dirs
+    guarded = ctx.guard_home_dirs if ctx.scope == "project" else [d for d in ctx.repo_dirs if d not in ctx.home_dirs]
+    for d in active:
+        entry = {"ok": 0, "missing": [], "conflicts": [], "stale": [], "dangling": []}
+        report["links"][d] = entry
+        for name, target in sorted(plan.selected.items()):
+            path = os.path.join(d, name)
+            if os.path.islink(path) and same_target(path, target):
+                entry["ok"] += 1
+            elif os.path.lexists(path) and not (os.path.islink(path) and owner.owns(path)):
+                entry["conflicts"].append(name)
+            else:
+                entry["missing"].append(name)
+        for name in sorted(os.listdir(d)) if os.path.isdir(d) else []:
+            path = os.path.join(d, name)
+            if not os.path.islink(path):
+                continue
+            if not os.path.exists(path):
+                if owner.owns(path):
+                    entry["dangling"].append(name)
+                else:
+                    warnings.append("foreign dangling link (left alone): " + short(path))
+            elif owner.owns(path) and name not in plan.selected:
+                entry["stale"].append(name)
+        if entry["missing"]:
+            problems.append("{}: {} missing link(s): {}".format(short(d), len(entry["missing"]),
+                                                                  ", ".join(entry["missing"])))
+        if entry["conflicts"]:
+            problems.append("{}: not ours, so not linked: {}".format(short(d), ", ".join(entry["conflicts"])))
+        if entry["dangling"]:
+            problems.append("{}: dangling link(s): {}".format(short(d), ", ".join(entry["dangling"])))
+        if entry["stale"]:
+            problems.append("{}: stale link(s): {}".format(short(d), ", ".join(entry["stale"])))
+        if (entry["missing"] or entry["stale"] or entry["dangling"]) and os.path.isdir(d) \
+                and not os.access(d, os.W_OK):
+            problems.append("{} is not writable".format(short(d)))
+    for d in guarded:
+        if not os.path.isdir(d):
+            continue
+        leaked = [n for n in sorted(os.listdir(d))
+                  if os.path.islink(os.path.join(d, n)) and owner.owns(os.path.join(d, n))]
+        if leaked:
+            problems.append("{} scope, but {} holds our links: {}".format(ctx.scope, short(d), ", ".join(leaked)))
+    for selector in plan.unknown:
+        warnings.append("enable/disable entry matches nothing: " + selector)
+    mcp = register_mcp(ctx, apply=False)
+    for name in mcp.undefined:
+        warnings.append("mcp {} is not defined in {}".format(name, short(os.path.join(ctx.private, "mcp", "servers.json"))))
+    for repo, name in mcp.missing:
+        (warnings if mcp.no_claude else problems).append("mcp {} not registered for {}".format(name, short(repo)))
+    fetched, attempted = mtime(stamp("fetched")), mtime(stamp("attempted"))
+    report["fetched"], report["attempted"] = fetched, attempted
+    if fetched is None or time.time() - fetched > 7 * 86400:
+        warnings.append("last successful fetch: " + ago(fetched))
+    try:
+        with open(stamp("sync.log"), encoding="utf-8") as fh:
+            tail = [ln.strip() for ln in fh.read().splitlines() if ln.strip()][-3:]
+        warnings.extend("last sync: " + ln for ln in tail)
+    except (OSError, UnicodeError):
+        pass
+    report["problems"], report["warnings"] = problems, warnings
+    if args.json:
+        say(json.dumps(report, indent=2, sort_keys=True, default=str))
+        return 1 if problems else 0
+    say("machine  {} ({})".format(ctx.machine or UNMATCHED,
+                                 "skills profile" if ctx.has_profile else "default profile"))
+    say("scope    {} · root {} · private {}".format(ctx.scope, short(ctx.root), "yes" if ctx.use_private else "no"))
+    say("repos    " + (", ".join(short(r) for r in ctx.repos) or "(none)"))
+    for label, state in sorted(report["checkouts"].items()):
+        if state["exists"]:
+            say("{:<8} {} on {} · {} dirty · ahead {} behind {}".format(
+                label, short(state["path"]), state.get("branch"), state.get("dirty", 0),
+                state.get("ahead", "?"), state.get("behind", "?")))
+    say("skills   {} selected of {} available".format(len(plan.selected), len(plan.available)))
+    for d, entry in sorted(report["links"].items()):
+        say("links    {}: {} ok".format(short(d), entry["ok"]))
+    for name in plan.overrides:
+        say("note     private {} overrides public {}".format(name, name))
+    say("fetch    " + ("fetched " + ago(fetched) if fetched else "never fetched"))
+    for w in warnings:
+        say("warning  " + w)
+    for p in problems:
+        say("problem  " + p)
+    say("doctor: {}".format("{} problem(s)".format(len(problems)) if problems else "ok"))
+    return 1 if problems else 0
+
+
+# ----------------------------------------------------------------------------------------- guard
+
+ALLOW_MARKER = "public-guard: allow"
+GUARD_SKIP_DIRS = {".git", "node_modules", "__pycache__", ".venv", "venv", ".firecrawl",
+                   ".skill-evals", ".evals", ".mypy_cache", ".pytest_cache"}
+CODE_SUFFIXES = (".py", ".sh", ".bash", ".zsh", ".js", ".mjs", ".cjs", ".ts", ".tsx")
+MAX_GUARD_BYTES = 2 * 1024 * 1024
+HOME_PLACEHOLDERS = ("you|your-?name|user|username|me|name|example|runner|shared|Shared|USER|"
+                     "ubuntu|vscode|node|linuxbrew|someone|alice|bob|Public|Default")
+HOME_NAME = r"(?!(?:" + HOME_PLACEHOLDERS + r")(?![\w.-]))[A-Za-z0-9_][\w.-]*"
+BUILTIN_PATTERNS = (
+    ("home-path", re.compile(r"(?:(?<![\w.~-])|(?<=/mnt/[a-z]))/(?:Users|home)/" + HOME_NAME)),
+    ("home-path", re.compile(r"\b[A-Za-z]:\\{1,2}Users\\{1,2}" + HOME_NAME)),
+    ("sideproject-path", re.compile(r"(?:~|\$HOME|\$\{HOME\}|%USERPROFILE%)[/\\]Sideproject\b", re.I)),
+    ("personal-email", re.compile(r"\b[A-Za-z0-9._%+-]+@(?:gmail|googlemail|hotmail|yahoo|outlook|"
+                                  r"icloud|live|msn|protonmail|proton)\.[a-z]{2,}(?:\.[a-z]{2})?\b",
+                                  re.I)),
+    ("sg-nric", re.compile(r"\b[STFGM]\d{7}[A-Z]\b")),
+    ("private-key", re.compile(r"-----BEGIN (?:[A-Z0-9]+ )*PRIVATE KEY-----")),
+    ("token", re.compile(r"\b(?:gh[pousr]_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{40,}|"
+                         r"sk-(?:ant-|proj-)?[A-Za-z0-9_-]{32,}|AKIA[0-9A-Z]{16}|"
+                         r"xox[abprs]-[A-Za-z0-9-]{10,}|AIza[0-9A-Za-z_-]{35}|fc-[0-9a-f]{32}|"
+                         r"glpat-[A-Za-z0-9_-]{20,})")),
+    ("secret-assignment", re.compile(r"(?i)\b(?:api[_-]?key|secret|token|passw(?:or)?d)\b[\"']?\s*"
+                                     r"[:=]\s*[\"'](?![$<{%])[^\"'\s]{16,}[\"']")),
+)
+PHONE_PATTERNS = (
+    re.compile(r"(?<![\w+])\+\d{1,3}[ .-]?(?:\(\d{1,4}\)[ .-]?)?\d{2,4}(?:[ .-]?\d{2,4}){1,4}(?!\w)"),
+    re.compile(r"(?<![\w+./:-])[689]\d{3}[ -]?\d{4}(?![\w/:-])"),
+    re.compile(r"(?<![\w+./:-])(?:\(\d{3}\) ?|\d{3}[.-])\d{3}[.-]\d{4}(?![\w/-])"),
+)
+# Shelling out to a personal AI CLI from a skill lets a company-model session hand work to a
+# personal agent. Host-native subagents are fine; lines that only forbid a launch are fine.
+AI_CLI_LAUNCH = (
+    ("codex", re.compile(r"\bcodex\b.{0,40}\bexec\b", re.I)),
+    ("claude", re.compile(r"\bclaude\b.{0,40}(?:-p|--print)\b", re.I)),
+    ("gemini", re.compile(r"\bgemini\b.{0,40}(?:-p|--prompt)\b", re.I)),
+    ("aider", re.compile(r"\baider\b.{0,40}--message\b", re.I)),
+)
+HARNESS_DECL = re.compile(r"\bharness:\s*(codex|claude)\b", re.I)
+NON_LAUNCH_WORDS = re.compile(
+    r"\b(?:never|not|forbid(?:s|den)?|reject(?:s|ed)?|must\s+not|do\s+not|don't|without|"
+    r"instead\s+of|contamination|treat\s+any)\b", re.I)
+PROCESS_CALLS = {
+    "subprocess.run", "subprocess.Popen", "subprocess.call", "subprocess.check_call",
+    "subprocess.check_output", "subprocess.getoutput", "subprocess.getstatusoutput",
+    "os.system", "os.popen", "os.execv", "os.execvp", "os.execlp", "os.spawnvp", "pty.spawn",
+    "asyncio.create_subprocess_exec", "asyncio.create_subprocess_shell",
+}
+LEGACY_STR = getattr(ast, "Str", None) if sys.version_info < (3, 8) else None
+
+
+def phone_hit(line):
+    for pattern in PHONE_PATTERNS:
+        for m in pattern.finditer(line):
+            digits = re.sub(r"\D", "", m.group(0))
+            if 8 <= len(digits) <= 15 and not digits.endswith("0000") and len(set(digits)) > 2:
+                return True
+    return False
+
+
+def ai_cli(text):
+    for name, pattern in AI_CLI_LAUNCH:
+        if pattern.search(text):
+            return name
+    return None
+
+
+def strings_in(node):
+    found = []
+    for n in ast.walk(node):
+        if isinstance(n, ast.Constant) and isinstance(getattr(n, "value", None), str):
+            found.append((getattr(n, "lineno", 0), getattr(n, "col_offset", 0), n.value))
+        elif LEGACY_STR is not None and isinstance(n, LEGACY_STR):
+            found.append((getattr(n, "lineno", 0), getattr(n, "col_offset", 0), n.s))
+    return " ".join(s for _, _, s in sorted(found, key=lambda t: (t[0], t[1])))
+
+
+def call_name(node, aliases):
+    if isinstance(node, ast.Name):
+        return aliases.get(node.id, node.id)
+    if isinstance(node, ast.Attribute):
+        prefix = call_name(node.value, aliases)
+        return (prefix + "." if prefix else "") + node.attr
+    return ""
+
+
+def line_launches(lines, prose):
+    found = []
+    for n, line in enumerate(lines, 1):
+        cli = ai_cli(line)
+        if not cli:
+            continue
+        context = (lines[n - 2] if n > 1 else "") + line
+        comment = line.lstrip().startswith(("#", "//"))
+        if (prose or comment) and NON_LAUNCH_WORDS.search(context):
+            continue
+        found.append((n, cli))
+    return found
+
+
+def python_launches(source):
+    """(line, cli) for process calls whose command launches an AI CLI."""
+    try:
+        tree = ast.parse(source)
+    except (SyntaxError, ValueError):
+        return line_launches(source.splitlines(), prose=False)
+    aliases = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for a in node.names:
+                aliases[a.asname or a.name] = a.name
+        elif isinstance(node, ast.ImportFrom) and node.module in ("subprocess", "os", "asyncio", "pty"):
+            for a in node.names:
+                aliases[a.asname or a.name] = node.module + "." + a.name
+    command_vars = {}
+    for node in ast.walk(tree):
+        value = getattr(node, "value", None) if isinstance(node, (ast.Assign, ast.AnnAssign)) else None
+        if value is None:
+            continue
+        cli = ai_cli(strings_in(value))
+        if cli:
+            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+            for t in targets:
+                if isinstance(t, ast.Name):
+                    command_vars[t.id] = cli
+    found = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call) or call_name(node.func, aliases) not in PROCESS_CALLS:
+            continue
+        parts = list(node.args) + [kw.value for kw in node.keywords if kw.arg in ("args", "cmd")]
+        cli = ai_cli(" ".join(strings_in(p) for p in parts))
+        if not cli:
+            for p in parts:
+                if isinstance(p, ast.Name) and p.id in command_vars:
+                    cli = command_vars[p.id]
+                    break
+        if cli:
+            found.append((node.lineno, cli))
+    return found
+
+
+def launch_findings(path, text, lines):
+    name = os.path.basename(path)
+    if name == "SKILL.md":
+        return line_launches(lines, prose=True)
+    shebang = lines[0] if lines and lines[0].startswith("#!") else ""
+    if not name.endswith(CODE_SUFFIXES) and not shebang:
+        return []
+    if lines and "HISTORICAL_EVAL_LAUNCHER_DISABLED" in lines[0]:
+        return []
+    decl = HARNESS_DECL.search("\n".join(lines[:5]))
+    harness = decl.group(1).lower() if decl else None
+    if name.endswith(".py") or "python" in shebang:
+        found = python_launches(text)
+    else:
+        found = line_launches(lines, prose=False)
+    return [(n, cli) for n, cli in found if cli != harness]
+
+
+def in_skill_folder(path):
+    d = os.path.dirname(os.path.abspath(path))
+    while True:
+        if os.path.isfile(os.path.join(d, "SKILL.md")):
+            return True
+        if os.path.exists(os.path.join(d, ".git")):
+            return False
+        parent = os.path.dirname(d)
+        if parent == d:
+            return False
+        d = parent
+
+
+def metadata_exempt(path):
+    """Repo metadata carries the public owner attribution; skill folders never are exempt."""
+    name = os.path.basename(path)
+    parent = os.path.basename(os.path.dirname(os.path.abspath(path)))
+    if not (name.startswith(("LICENSE", "LICENCE")) or (parent == ".claude-plugin" and name.endswith(".json"))):
+        return False
+    return not in_skill_folder(path)
+
+
+def load_terms(path):
+    terms, bad = [], []
+    if not path:
+        return terms, bad
+    try:
+        with open(path, encoding="utf-8") as fh:
+            lines = fh.read().splitlines()
+    except (OSError, UnicodeError):
+        return terms, bad
+    for n, raw in enumerate(lines, 1):
+        text = raw.strip()
+        if not text or text.startswith("#"):
+            continue
+        try:
+            terms.append(("guard-terms:{}".format(n), re.compile(text, re.I)))
+        except re.error:
+            bad.append(n)
+    return terms, bad
+
+
+def guard_files(paths):
+    files, missing = [], []
+    for p in paths:
+        if os.path.isfile(p):
+            files.append(p)
+            continue
+        if not os.path.isdir(p):
+            missing.append(p)
+            continue
+        listed = git(p, "ls-files", "-co", "--exclude-standard", "-z")
+        if listed is not None and listed.returncode == 0:
+            for rel in sorted(x for x in listed.stdout.split("\0") if x):
+                if not any(part in GUARD_SKIP_DIRS for part in rel.split("/")[:-1]):
+                    files.append(os.path.join(p, rel))
+            continue
+        for dp, dns, fns in os.walk(p):
+            dns[:] = sorted(d for d in dns if d not in GUARD_SKIP_DIRS)
+            files.extend(os.path.join(dp, f) for f in sorted(fns))
+    return files, missing
+
+
+def scan_file(path, terms):
+    try:
+        if os.path.islink(path) or os.path.getsize(path) > MAX_GUARD_BYTES:
+            return []
+        with open(path, "rb") as fh:
+            data = fh.read()
+    except OSError:
+        return []
+    if b"\0" in data[:8192]:
+        return []
+    text = data.decode("utf-8", "replace")
+    lines = text.splitlines()
+    hits = []
+    for n, line in enumerate(lines, 1):
+        if ALLOW_MARKER in line:
+            continue
+        for name, pattern in BUILTIN_PATTERNS + tuple(terms):
+            if pattern.search(line):
+                hits.append((n, name))
+        if phone_hit(line):
+            hits.append((n, "phone"))
+    for n, cli in launch_findings(path, text, lines):
+        if not (0 < n <= len(lines) and ALLOW_MARKER in lines[n - 1]):
+            hits.append((n, "ai-cli-launch:" + cli))
+    return sorted(set(hits))
+
+
+def guard_root(args_root=None):
+    return expand(args_root or os.environ.get("SKILLS_ROOT") or DEFAULT_ROOT)
+
+
+def run_guard(paths, root=None, terms_file=None):
+    """(hits [(path, line, pattern)], missing paths, bad term line numbers)."""
+    terms_path = expand(terms_file) if terms_file else os.path.join(guard_root(root), PRIVATE, "guard-terms.txt")
+    terms, bad = load_terms(terms_path)
+    files, missing = guard_files(paths)
+    skip = os.path.realpath(terms_path)
+    hits = []
+    for path in files:
+        if os.path.realpath(path) == skip or metadata_exempt(path):
+            continue
+        for n, name in scan_file(path, terms):
+            hits.append((path, n, name))
+    return hits, missing, bad, len(files)
+
+
+def display(path):
+    return os.path.normpath(path)
+
+
+def report_guard(hits, missing, bad, scanned):
+    for path, n, name in hits:
+        say("{}:{}: {}".format(display(path), n, name))
+    for p in missing:
+        say("guard: no such path: " + p, sys.stderr)
+    for n in bad:
+        say("guard: guard-terms line {} is not a valid regex (skipped)".format(n), sys.stderr)
+    if hits:
+        say("guard: {} hit(s) in {} file(s); fix them or mark a deliberate line with `{}`".format(
+            len(hits), len(set(h[0] for h in hits)), ALLOW_MARKER), sys.stderr)
+    else:
+        say("guard: clean ({} file(s))".format(scanned), sys.stderr)
+
+
+def cmd_guard(args):
+    hits, missing, bad, scanned = run_guard(args.paths or ["."], args.root, args.terms)
+    report_guard(hits, missing, bad, scanned)
+    if hits:
+        return 2
+    return 1 if missing else 0
+
+
+# --------------------------------------------------------------------------------------- publish
+
+def is_private_checkout(checkout):
+    if os.path.basename(os.path.realpath(checkout)) == PRIVATE:
+        return True
+    url = git_out(checkout, "remote", "get-url", "origin") or ""
+    return bool(re.search(r"skills-private(?:\.git)?/?$", url))
+
+
+def find_linter(checkout):
+    rel = os.path.join("skills", "skillsmith", "scripts", "lint_skill.py")
+    candidates = [os.path.join(checkout, rel), os.path.join(os.path.dirname(checkout), PUBLIC, rel)]
+    store = os.environ.get("PDS_ROOT")
+    if not store:
+        r = run(["git", "rev-parse", "--show-toplevel"], timeout=5)
+        store = r.stdout.strip() if r is not None and r.returncode == 0 else None
+    if store:
+        candidates.append(os.path.join(store, ".claude", "skills", "skillsmith", "scripts", "lint_skill.py"))
+    for c in candidates:
+        if os.path.isfile(c):
+            return c
+    return None
+
+
+def changed_paths(checkout, upstream):
+    paths = set()
+    r = git(checkout, "status", "--porcelain", "-z", "--untracked-files=all")
+    if r is not None and r.returncode == 0:
+        items = r.stdout.split("\0")
+        i = 0
+        while i < len(items):
+            item = items[i]
+            if len(item) > 3:
+                paths.add(item[3:])
+                if item[0] in "RC":
+                    i += 1  # rename source follows
+            i += 1
+    if upstream:
+        diff = git_out(checkout, "diff", "--name-only", "@{u}...HEAD")
+        paths.update(p for p in (diff or "").splitlines() if p)
+    return paths
+
+
+def cmd_publish(args):
+    checkout = git_out(expand(args.checkout), "rev-parse", "--show-toplevel")
+    if not checkout:
+        say("publish: not a git checkout: " + args.checkout, sys.stderr)
+        return 1
+    with file_lock(checkout_lock_path(checkout), blocking=True, timeout=120) as got:
+        if not got:
+            say("publish: another publish or sync holds the lock; try again", sys.stderr)
+            return 1
+        branch = git_out(checkout, "symbolic-ref", "--quiet", "--short", "HEAD")
+        if not branch:
+            say("publish: detached HEAD; check out a branch first", sys.stderr)
+            return 1
+        upstream = git_out(checkout, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}")
+        dirty = bool(git_out(checkout, "status", "--porcelain"))
+        ahead = int(git_out(checkout, "rev-list", "--count", "@{u}..HEAD") or 0) if upstream else 1
+        if not dirty and not ahead:
+            say("publish: nothing to publish")
+            return 0
+        private = is_private_checkout(checkout)
+        if not private:
+            hits, _, bad, scanned = run_guard([checkout])
+            if hits:
+                report_guard(hits, [], bad, scanned)
+                say("publish: refused, guard hits in the public checkout", sys.stderr)
+                return 2
+        skills = sorted(set(p.split("/")[1] for p in changed_paths(checkout, upstream)
+                            if p.startswith("skills/") and p.count("/") >= 2))
+        skills = [s for s in skills if os.path.isfile(os.path.join(checkout, "skills", s, "SKILL.md"))]
+        linter = find_linter(checkout)
+        if skills and linter:
+            failed = []
+            for s in skills:
+                r = run([sys.executable, linter, os.path.join(checkout, "skills", s)], timeout=120)
+                if r is None or r.returncode != 0:
+                    failed.append(s)
+                    say((r.stderr if r is not None else "lint timed out").rstrip(), sys.stderr)
+            if failed:
+                say("publish: refused, lint failed: " + ", ".join(failed), sys.stderr)
+                return 1
+        elif skills:
+            say("publish: skillsmith linter not found; lint skipped", sys.stderr)
+        if dirty:
+            for step in (["add", "-A"], ["commit", "--quiet", "-m", args.message]):
+                r = git(checkout, *step, timeout=120)
+                if r is None or r.returncode != 0:
+                    say("publish: git {} failed: {}".format(step[0], (r.stderr or r.stdout).strip() if r else "timeout"),
+                        sys.stderr)
+                    return 1
+        push = ["push", "--quiet"] + ([] if upstream else ["-u", "origin", branch])
+        r = git(checkout, *push, timeout=180)
+        if (r is None or r.returncode != 0) and upstream:
+            fetched = git(checkout, "fetch", "--quiet", "origin", timeout=120)
+            rebased = git(checkout, "rebase", "--quiet", "@{u}", timeout=120) if fetched and fetched.returncode == 0 else None
+            if rebased is None or rebased.returncode != 0:
+                git(checkout, "rebase", "--abort")
+                say("publish: committed locally, but the push was rejected and the rebase failed", sys.stderr)
+                return 1
+            r = git(checkout, *push, timeout=180)
+        if r is None or r.returncode != 0:
+            say("publish: committed locally, but the push failed: " + ((r.stderr.strip() if r else "timeout")), sys.stderr)
+            return 1
+        say("publish: pushed {} ({})".format(branch, git_out(checkout, "rev-parse", "--short", "HEAD")))
+        return 0
+
+
+# ------------------------------------------------------------------------------------------ main
+
+def add_profile_args(p):
+    p.add_argument("--repo", action="append", metavar="R",
+                   help="repo to link into (repeatable; profile repos are added)")
+    p.add_argument("--machines", metavar="M", help="machines registry JSON (e.g. life/tech/machines.json)")
+
+
+def build_parser():
+    parser = argparse.ArgumentParser(prog="skills", description=__doc__.split("\n\n")[0],
+                                     formatter_class=argparse.RawDescriptionHelpFormatter,
+                                     epilog=__doc__.split("\n\n", 1)[1])
+    sub = parser.add_subparsers(dest="command", metavar="COMMAND")
+    up = sub.add_parser("up", help="sync in the background, link, register MCP, print one status line")
+    add_profile_args(up)
+    up.add_argument("--hook", choices=("claude", "codex"), help="format output for a SessionStart hook")
+    up.add_argument("--wait", action="store_true", help="clone/fetch in the foreground first")
+    link = sub.add_parser("link", help="create the enabled links and remove stale ones")
+    add_profile_args(link)
+    unlink = sub.add_parser("unlink", help="remove every link into the checkouts")
+    add_profile_args(unlink)
+    doctor = sub.add_parser("doctor", help="report profile, links, checkouts, fetch; exit 1 on problems")
+    add_profile_args(doctor)
+    doctor.add_argument("--json", action="store_true")
+    guard = sub.add_parser("guard", help="public-safety scan; exit 2 on hits")
+    guard.add_argument("paths", nargs="*", metavar="PATH")
+    guard.add_argument("--root", help="checkouts root (default: $SKILLS_ROOT or the default root)")
+    guard.add_argument("--terms", help="extra guard terms file (default: <root>/skills-private/guard-terms.txt)")
+    publish = sub.add_parser("publish", help="lock, guard (public), lint, commit, push")
+    publish.add_argument("--checkout", required=True, metavar="C")
+    publish.add_argument("-m", "--message", required=True, metavar="MSG")
+    sync = sub.add_parser("_sync")
+    add_profile_args(sync)
+    return parser
+
+
+def main(argv=None):
+    try:
+        sys.stdout.reconfigure(errors="replace")
+    except (AttributeError, ValueError):
+        pass
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    handlers = {"up": cmd_up, "link": cmd_link, "unlink": cmd_unlink, "doctor": cmd_doctor,
+                "guard": cmd_guard, "publish": cmd_publish,
+                "_sync": lambda a: (sync_checkouts(Context(a)), 0)[1]}
+    if args.command not in handlers:
+        parser.print_help()
+        return 1
+    return handlers[args.command](args)
+
+
+if __name__ == "__main__":
+    sys.exit(main())
