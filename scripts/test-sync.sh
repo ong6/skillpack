@@ -358,5 +358,27 @@ check "post-push conflict preserves state and local edit" \
 rc=0; SKILLS_SYNC_URL="$T/race-upstream.git" sync "$repo" --merge >/dev/null 2>&1 || rc=$?
 check "failed post-push merge remains pending on retry" "[ $rc -eq 2 ]"
 
+# A parallel session can modify the worktree after the clean check but before git subtree
+# merges; git subtree then refuses without starting a merge. That is a retry, not a conflict.
+repo="$T/mid-sync-edit"
+fixture "$repo"
+printf 'upstream moved\n' > "$T/dirty-mixed/$P/mid-sync.md"
+sync "$T/dirty-mixed" --stop 2>/dev/null
+sync "$repo" --fetch
+cp "$repo/.git/skills-sync" "$T/mid-sync-state"
+mkdir -p "$T/racing-git"
+cat > "$T/racing-git/git" <<RACE
+#!/usr/bin/env bash
+[ "\$1 \$2" != "subtree merge" ] || printf 'parallel session\\n' >> '$repo/unstaged.txt'
+exec $(command -v git) "\$@"
+RACE
+chmod +x "$T/racing-git/git"
+rc=0; out="$(PATH="$T/racing-git:$PATH" sync "$repo" --merge 2>&1)" || rc=$?
+check "worktree edited mid-sync defers instead of reporting a conflict" \
+  "[ $rc -eq 0 ] && echo \"$out\" | grep -q 'did not start' && ! echo \"$out\" | grep -q CONFLICT && cmp -s '$T/mid-sync-state' '$repo/.git/skills-sync' && grep -q 'parallel session' '$repo/unstaged.txt' && [ ! -e '$repo/.git/MERGE_HEAD' ]"
+git -C "$repo" checkout -q -- unstaged.txt
+rc=0; sync "$repo" --merge >/dev/null 2>&1 || rc=$?
+check "and merges on the next clean run" "[ $rc -eq 0 ] && [ -f '$repo/$P/mid-sync.md' ]"
+
 echo "sync tests: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

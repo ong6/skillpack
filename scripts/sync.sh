@@ -159,6 +159,12 @@ merge_remote() {
     return 0
   fi
   local files; files="$(git diff --name-only --diff-filter=U 2>/dev/null | tr '\n' ' ')"
+  if [ -z "$files" ] && ! git rev-parse -q --verify MERGE_HEAD >/dev/null; then
+    # git subtree refused before merging: the worktree changed after checkout_clean,
+    # typically a parallel session editing files. Nothing to abort or resolve.
+    say "upstream merge into $PREFIX did not start (worktree changed during sync); will retry next session."
+    return 0
+  fi
   git merge --abort 2>/dev/null || git reset -q --merge 2>/dev/null
   say "CONFLICT merging upstream into $PREFIX (in: ${files:-unknown}). Resolve: git subtree merge --squash --prefix=$PREFIX $r, fix, commit, then rerun sync.sh --stop."
   return 2
