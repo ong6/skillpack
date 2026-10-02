@@ -2287,6 +2287,19 @@ def cmd_publish(args):
     return {"nothing": 0, "pushed": 0, "guard": 2}.get(status, 1)
 
 
+def settled(checkout):
+    """One `git status` call: clean, on a branch with an upstream, and nothing to push. This is
+    the every-turn path, so it skips the lock and the half-dozen calls save_checkout makes."""
+    r = git(checkout, "status", "--porcelain=v2", "--branch", "--untracked-files=normal")
+    if r is None or r.returncode != 0:
+        return False
+    lines = r.stdout.splitlines()
+    if any(not line.startswith("#") for line in lines):
+        return False  # changes to commit
+    ab = [line.split() for line in lines if line.startswith("# branch.ab ")]
+    return bool(ab) and ab[0][2] == "+0"
+
+
 def cmd_autosync(args):
     """Stop hook: commit and push every dirty or unpushed checkout with a generated message.
     Exit 2 when something needs the agent (guard hit, lint failure, rebase conflict), 1 when a
@@ -2294,7 +2307,7 @@ def cmd_autosync(args):
     ctx = Context(args)
     code = 0
     for checkout in ctx.checkouts():
-        if not os.path.isdir(os.path.join(checkout, ".git")):
+        if not os.path.isdir(os.path.join(checkout, ".git")) or settled(checkout):
             continue
         status, lines = save_checkout(checkout)
         label = "skills autosync ({}): ".format(short(checkout))
