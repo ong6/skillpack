@@ -79,14 +79,21 @@ again before they leave. A dirty tree is left to `autosync`, which commits it fi
 | Folder | Linked | Holds |
 |---|---|---|
 | `skills/<name>` | yes | the core set |
-| `rarely-used/<name>` | no | skills nobody used for 30 days; found by `find`, readable in place |
+| `rarely-used/<name>` | as a stub | skills nobody used for 30 days; still callable by name, found by `find` |
 
 Once a day the background sync records which skills this machine's Claude Code and Codex
 transcripts used, in `usage/<machine>.json` in the private checkout. It then runs `tidy`. A core
 skill moves to `rarely-used/` when no machine used it in 30 days, it arrived in core more than 30
 days ago, and there is a month of usage data. Pinned skills (`pinned:` in `catalog.yaml`) and
 skills that a staying skill names in backticks stay put. A shelved skill used again on any machine
-moves back. A use is a Skill tool call, a `/name` or `$name` request, or reading or running the
+moves back.
+
+A shelved skill keeps a generated stub in the link folders, so typing `/name` in Claude Code or
+`$name` in Codex still runs it. The Claude stub sets `disable-model-invocation: true` and the Codex
+stub sets `allow_implicit_invocation: false`, so neither model loads or picks it on its own. The
+stub tells the agent to read the real `SKILL.md`, and that read counts as a use.
+
+A use is a Skill tool call, a `/name` or `$name` request, or reading or running the
 skill's own files. Edits, searches, and sessions that touch more than five skills (audits, evals)
 are not uses.
 

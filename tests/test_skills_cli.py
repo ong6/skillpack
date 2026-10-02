@@ -895,6 +895,64 @@ class TidyTests(Sandbox):
         self.assertTrue(os.path.isdir(os.path.join(self.private, "skills", "handoff")))
 
 
+class StubTests(Sandbox):
+    def shelve(self, checkout, name):
+        os.makedirs(os.path.join(checkout, "rarely-used"), exist_ok=True)
+        os.rename(os.path.join(checkout, "skills", name), os.path.join(checkout, "rarely-used", name))
+
+    def test_shelved_skills_get_on_call_stubs_that_swap_with_links(self):
+        self.up()
+        self.shelve(self.public, "system-diagram")
+        r = self.up()
+        self.assertIn("on call", r.stdout)
+        target = os.path.join(self.public, "rarely-used", "system-diagram")
+        claude = os.path.join(self.store, ".claude", "skills", "system-diagram")
+        codex = os.path.join(self.store, ".agents", "skills", "system-diagram")
+        for stub in (claude, codex):
+            self.assertTrue(os.path.isdir(stub) and not os.path.islink(stub))
+        with open(os.path.join(claude, "SKILL.md")) as fh:
+            text = fh.read()
+        self.assertIn("name: system-diagram", text)
+        self.assertIn("disable-model-invocation: true", text)
+        self.assertIn("Does system-diagram.", text)
+        self.assertIn(os.path.join(target, "SKILL.md"), text)
+        with open(os.path.join(codex, "SKILL.md")) as fh:
+            self.assertNotIn("disable-model-invocation", fh.read())
+        with open(os.path.join(codex, "agents", "openai.yaml")) as fh:
+            self.assertIn("allow_implicit_invocation: false", fh.read())
+        self.assertNotIn("system-diagram", self.store_links())
+        quiet = self.up()
+        self.assertNotIn("stub", quiet.stdout)
+        doctor = self.cli("doctor", "--repo", self.store, "--machines", self.machines)
+        self.assertIn("1 stub(s) ok", doctor.stdout)
+        os.rename(target, os.path.join(self.public, "skills", "system-diagram"))
+        self.up()
+        self.assertTrue(os.path.islink(claude))
+        self.assertEqual(self.store_links()["system-diagram"], self.target(self.public, "system-diagram"))
+
+    def test_foreign_folders_are_left_alone_and_unlink_removes_stubs(self):
+        self.shelve(self.public, "system-diagram")
+        self.shelve(self.public, "handoff")
+        foreign = os.path.join(self.store, ".claude", "skills", "handoff")
+        write(os.path.join(foreign, "SKILL.md"), "mine\n")
+        r = self.up()
+        self.assertIn("conflict", r.stdout)
+        with open(os.path.join(foreign, "SKILL.md")) as fh:
+            self.assertEqual(fh.read(), "mine\n")
+        stub = os.path.join(self.store, ".claude", "skills", "system-diagram")
+        self.assertTrue(os.path.isdir(stub))
+        r = self.cli("unlink", "--repo", self.store, "--machines", self.machines)
+        self.assertIn("stub(s) removed", r.stdout)
+        self.assertFalse(os.path.exists(stub))
+        self.assertTrue(os.path.isdir(foreign))
+
+    def test_disabled_shelved_skills_get_no_stub(self):
+        self.write_machines({"root": self.root, "disable": ["system-diagram"]})
+        self.shelve(self.public, "system-diagram")
+        self.up()
+        self.assertFalse(os.path.exists(os.path.join(self.store, ".claude", "skills", "system-diagram")))
+
+
 class FindTests(Sandbox):
     def setUp(self):
         super().setUp()

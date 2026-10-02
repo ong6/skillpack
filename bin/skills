@@ -20,8 +20,9 @@ Checkouts live at <root>/skills and <root>/skills-private; links point at
 <checkout>/skills/<name>. Only symlinks into those two checkouts are ever changed.
 
 Each checkout has two tiers. `skills/<name>` is the core set that gets linked.
-`rarely-used/<name>` holds skills nobody has used for 30 days: never linked, still found by
-`find` and readable in place. Once a day the background sync records which skills this machine's
+`rarely-used/<name>` holds skills nobody has used for 30 days: not linked but stubbed, so they
+stay callable by name (`/name`, `$name`) without loading into the model's context, and `find`
+still finds them. Once a day the background sync records which skills this machine's
 Claude Code and Codex sessions used (`usage/<machine>.json` in the private checkout). It then
 moves idle core skills to the shelf and shelved skills that were used again back to core, and
 pushes the result. Pinned skills (catalog `pinned:`) and skills a core skill names stay in core.
@@ -2484,8 +2485,9 @@ def cmd_find(args):
             say("  seen in: {}{}".format(e["source"], " (" + e["source_url"] + ")" if e["source_url"] else ""))
     if any(e["tier"] == SHELF for _, e in shown):
         say("")
-        say("rarely used = not linked. Read its SKILL.md in place and follow it; a use moves it back to core "
-            "at the next daily tidy, or run `skills restore NAME` to link it now.")
+        say("rarely used = not loaded until called: `/NAME` (Claude Code) or `$NAME` (Codex) runs it, or read "
+            "its SKILL.md in place. A use moves it back to core at the next daily tidy; `skills restore NAME` "
+            "does it now.")
     return 0
 
 
