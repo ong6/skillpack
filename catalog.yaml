@@ -27,7 +27,11 @@ skill_summaries:
   review-fde-deck: Audit a field-engineering deck for logic, evidence, honesty, density and next steps.
   track-pilot-evidence: Track pilot criteria, evidence and risks where agents propose and humans decide.
   skillsmith: Make a skill from the repo, then keep it only if it beats the same model without it.
+  skill-search: Find a skill for a job across loaded, rarely used, retired and external skills.
 
+
+# Skills tidy never shelves (bin/skills moves skills idle for 30 days to rarely-used/).
+pinned: [skill-search]
 
 categories:
   - key: research
@@ -237,7 +241,7 @@ categories:
   - key: skill-building
     title: Skill building
     blurb: Making, testing and improving the skills themselves.
-    skills: [skillsmith, feedback-loop]
+    skills: [skill-search, skillsmith, feedback-loop]
     links:
       - repo: anthropics/skills
         note: The official reference set and the Agent Skills spec.

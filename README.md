@@ -134,6 +134,7 @@ CI fails when they drift.
 | [`create-fde-deck`](skills/create-fde-deck/SKILL.md) | Write evidence-labelled field-engineering decks: discovery, architecture, pilot readout. |
 | [`review-fde-deck`](skills/review-fde-deck/SKILL.md) | Audit a field-engineering deck for logic, evidence, honesty, density and next steps. |
 | [`track-pilot-evidence`](skills/track-pilot-evidence/SKILL.md) | Track pilot criteria, evidence and risks where agents propose and humans decide. |
+| [`skill-search`](skills/skill-search/SKILL.md) | Find a skill for a job across loaded, rarely used, retired and external skills. |
 | [`skillsmith`](skills/skillsmith/SKILL.md) | Make a skill from the repo, then keep it only if it beats the same model without it. |
 | [`feedback-loop`](skills/feedback-loop/SKILL.md) | Record feedback and patch the skill or rule that caused it in the same session. |
 <!-- SKILL INDEX END -->
@@ -255,6 +256,7 @@ _Making, testing and improving the skills themselves._
 
 | Skill | Does |
 |---|---|
+| [`skill-search`](skills/skill-search/SKILL.md) | Find out whether a skill exists for a job, including skills that are not loaded: rarely used skills (idle a month, so not linked), retired skills in the private archive, and external skills the catalog lists from saved videos and repos. Use for "do we have a skill for...", "find a skill that...", "is there a skill like X", "see if we have a skill like this", or when a manual or the user names a skill that is not in the loaded list. Not for writing or revising a skill (skillsmith), and not for running a skill that is already loaded. |
 | [`skillsmith`](skills/skillsmith/SKILL.md) | Make an agent skill grounded in the current repository, then prove it beats the same model without it: gate whether a skill is the right mechanism, inventory existing skills and conventions, draft and lint, run a blinded baseline-versus-skill evaluation, and keep or retire. Use whenever asked to add, create, write, revise, install, review, or prove a skill for Claude Code or Codex; not for typo-only edits, AGENTS.md rules, hooks, or prompts that do not change a skill. |
 | [`feedback-loop`](skills/feedback-loop/SKILL.md) | Capture the owner's feedback about how the agent, a skill, a hook, a rule, or a reply behaved, log it in feedback.md, and patch whatever it targets in the same session so the behaviour changes by default. Fires on "don't do X", "stop doing", "why does it", "next time", "I prefer", "that was wrong", "that's annoying", "can I turn this off", "always" or "never" about agent behaviour, or a correction to a reply; not for feedback on the owner's own writing, on other people, or a one-off instruction for the current task. |
 
