@@ -888,7 +888,7 @@ class TidyTests(Sandbox):
         r = self.cli("shelve", "handoff", "--machines", self.machines)
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertTrue(os.path.isdir(os.path.join(self.private, "rarely-used", "handoff")))
-        self.assertIn("by hand", self.git(self.private, "log", "-1", "--format=%s"))
+        self.assertEqual(self.git(self.private, "log", "-1", "--format=%s"), "Shelve handoff (by hand)")
         r = self.cli("restore", "handoff", "nope", "--machines", self.machines)
         self.assertEqual(r.returncode, 1)
         self.assertIn("no rarely used skill named nope", r.stderr)

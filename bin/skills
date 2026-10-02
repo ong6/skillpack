@@ -2392,7 +2392,7 @@ def apply_moves(checkouts, moves, message=None):
         shelve, restore = moves(checkout)
         if not shelve and not restore:
             continue
-        ok, err = move_skills(checkout, shelve, restore, message)
+        ok, err = move_skills(checkout, shelve, restore, message(checkout) if callable(message) else message)
         if not ok:
             say("{}: {}".format(short(checkout), err), sys.stderr)
             code = 1
@@ -2427,7 +2427,7 @@ def cmd_move(args):
         return 1
     verb = "Shelve" if args.command == "shelve" else "Restore"
     moves = lambda c: (where.get(c, []), []) if args.command == "shelve" else ([], where.get(c, []))  # noqa: E731
-    code = apply_moves(list(where), moves, "{} {} (by hand)".format(verb, ", ".join(sum(where.values(), []))))
+    code = apply_moves(list(where), moves, lambda c: "{} {} (by hand)".format(verb, ", ".join(where.get(c, []))))
     return code or (1 if missing else 0)
 
 
